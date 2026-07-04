@@ -1,0 +1,15 @@
+2026-07-04 13:43:18,129 [INFO] FoxxDesk rebrand v29-fix-powershell-driver-extract-2026-07-04 iniciado
+2026-07-04 13:43:18,129 [INFO] Target: /home/mateus/_Projects/FoxxDesk
+2026-07-04 13:43:18,130 [INFO] Modo: apply | profile=full | scan_all=False
+2026-07-04 13:43:18,130 [INFO] Icon assets: True | source=res/icon.png
+2026-07-04 13:43:18,132 [INFO] Etapa: garantir libs/hbb_common antes do rebrand
+2026-07-04 13:43:18,881 [INFO] Etapa: criar/atualizar helpers e workflow FoxxDesk
+2026-07-04 13:43:18,885 [INFO] Etapa: aplicar renomeações seguras e remover obsoletos
+2026-07-04 13:43:18,897 [INFO] Etapa: processar 279 arquivo(s) candidato(s)
+2026-07-04 13:43:20,556 [INFO] Etapa: reforçar helper bridge e permissões executáveis
+2026-07-04 13:43:20,561 [INFO] Etapa: icon assets V29
+2026-07-04 13:43:20,562 [INFO] Icon assets: executando /usr/bin/python3 scripts/apply_foxxdesk_icon.py --target /home/mateus/_Projects/FoxxDesk --source res/icon.png --ios-background #FFFFFF --apply --yes --update-ios-contents
+2026-07-04 13:43:17,555 [INFO] Icon assets stdout:
+Modo: apply | arquivos alterados: 54 | ja atualizados: 0 | erros: 0 | relatorio: /home/mateus/_Projects/FoxxDesk/icon_assets_report.md
+2026-07-04 13:43:17,555 [INFO] Etapa: validação final de segurança/build
+2026-07-04 13:43:17,675 [INFO] Resumo final: alterados=250 pendencias=0 nao_encontrados=0 relatorio=/home/mateus/_Projects/FoxxDesk/rebrand_report.md

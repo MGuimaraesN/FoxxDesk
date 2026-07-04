@@ -23,6 +23,7 @@ import argparse
 import codecs
 import datetime as _dt
 import hashlib
+import logging
 import re
 import shutil
 import subprocess
@@ -30,7 +31,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCRIPT_VERSION = "v27-fix-generated-helper-syntax-2026-07-04"
+SCRIPT_VERSION = "v29-fix-powershell-driver-extract-2026-07-04"
 APP_DISPLAY_NAME = "FoxxDesk"
 APP_SLUG = "foxxdesk"
 APP_SLUG_UPPER = "FOXXDESK"
@@ -231,6 +232,7 @@ ALLOWED_FILES: List[str] = [
     'scripts/apply_foxxdesk_brand_with_fixes.py',
     'scripts/fix_foxxdesk_windows_flutter_build.py',
     'scripts/fix_generated_bridge_compat.py',
+    'scripts/apply_foxxdesk_icon.py',
     'src/client.rs',
     'src/client/io_loop.rs',
     'src/clipboard.rs',
@@ -356,6 +358,7 @@ SAFE_CORE_FILES: List[str] = [
 GENERATED_HELPER_FILES: set[str] = {
     "scripts/fix_generated_bridge_compat.py",
     "scripts/fix_foxxdesk_windows_flutter_build.py",
+    "scripts/apply_foxxdesk_icon.py",
 }
 
 EXECUTABLE_FILES: set[str] = {
@@ -377,6 +380,7 @@ EXECUTABLE_FILES: set[str] = {
     "flutter/run.sh",
     "scripts/fix_generated_bridge_compat.py",
     "scripts/fix_foxxdesk_windows_flutter_build.py",
+    "scripts/apply_foxxdesk_icon.py",
 }
 
 # Arquivos antigos que não podem coexistir com o novo nome.
@@ -460,6 +464,9 @@ jobs:
 """
 
 WINDOWS_FLUTTER_BUILD_FIX_SCRIPT = '#!/usr/bin/env python3\n"""\nFixes the FoxxDesk Windows Flutter build after the RustDesk -> FoxxDesk rebrand.\nRun from the repository root:\n\n  python scripts/fix_foxxdesk_windows_flutter_build.py\n\nIt patches:\n- flutter-rust-bridge generated class compatibility (FoxxdeskImpl -> RustdeskImpl alias)\n- GitHub Actions bridge workflow to apply that compatibility after generation\n- a few Dart null-safety/type issues reported by the Windows build\n"""\nfrom __future__ import annotations\n\nimport re\nfrom pathlib import Path\n\nROOT = Path.cwd()\n\n\ndef read(path: str) -> str:\n    return (ROOT / path).read_text(encoding="utf-8")\n\n\ndef write(path: str, text: str) -> None:\n    p = ROOT / path\n    p.parent.mkdir(parents=True, exist_ok=True)\n    p.write_text(text, encoding="utf-8", newline="")\n\n\ndef replace_once(path: str, old: str, new: str) -> None:\n    text = read(path)\n    if new in text:\n        print(f"OK already patched: {path}")\n        return\n    if old not in text:\n        raise SystemExit(f"Pattern not found in {path}: {old!r}")\n    write(path, text.replace(old, new, 1))\n    print(f"PATCHED: {path}")\n\n\n# 1) Add a post-generation bridge compatibility fixer.\nbridge_compat = r\'\'\'#!/usr/bin/env python3\n"""Keep old Dart API name RustdeskImpl after FoxxDesk Cargo package rename.\n\nflutter_rust_bridge derives the generated Dart implementation class from the\nCargo package name. After package name `rustdesk` -> `foxxdesk`, the generated\nclass may become `FoxxdeskImpl`, but the Flutter app still imports/uses the\nstable internal API name `RustdeskImpl`.\n\nDo not rename all app code blindly. Add a Dart typedef alias instead.\n"""\nfrom __future__ import annotations\n\nimport re\nfrom pathlib import Path\n\np = Path("flutter/lib/generated_bridge.dart")\nif not p.exists():\n    raise SystemExit(f"Missing generated bridge: {p}")\n\ns = p.read_text(encoding="utf-8")\n\nif "class RustdeskImpl" in s or "typedef RustdeskImpl" in s:\n    print("generated_bridge.dart already exposes RustdeskImpl")\n    raise SystemExit(0)\n\nclasses = re.findall(r"class\\s+([A-Za-z_][A-Za-z0-9_]*Impl)\\b", s)\npreferred = [c for c in classes if "foxx" in c.lower() or "desk" in c.lower()]\nimpl = preferred[0] if preferred else (classes[0] if classes else None)\n\nif not impl:\n    raise SystemExit("Could not find generated bridge implementation class ending with Impl")\n\nalias = f"""\n\n// FoxxDesk compatibility alias.\n// Keep the Flutter source compatible with the original FoxxDesk internal FFI name.\ntypedef RustdeskImpl = {impl};\n"""\np.write_text(s.rstrip() + alias + "\\n", encoding="utf-8")\nprint(f"Added typedef RustdeskImpl = {impl};")\n\'\'\'\nwrite("scripts/fix_generated_bridge_compat.py", bridge_compat)\nprint("CREATED/UPDATED: scripts/fix_generated_bridge_compat.py")\n\n# 2) Make the reusable bridge workflow patch generated_bridge.dart before upload.\nbridge_yml = ".github/workflows/bridge.yml"\ntext = read(bridge_yml)\nstep = """\n      - name: Patch FoxxDesk bridge compatibility\n        shell: bash\n        run: python3 scripts/fix_generated_bridge_compat.py\n"""\nif "Patch FoxxDesk bridge compatibility" not in text:\n    marker = """      - name: Upload Artifact\n        uses: actions/upload-artifact"""\n    if marker not in text:\n        raise SystemExit("Could not find Upload Artifact step in .github/workflows/bridge.yml")\n    text = text.replace(marker, step + "\\n" + marker, 1)\n    write(bridge_yml, text)\n    print(f"PATCHED: {bridge_yml}")\nelse:\n    print(f"OK already patched: {bridge_yml}")\n\n# 3) Make local build.py generation apply the same alias whenever it touches generated_bridge.dart.\nbuild_py = "build.py"\ntext = read(build_py)\nold = \'\'\'def ffi_bindgen_function_refactor():\n    # workaround ffigen\n    system2(\n        \'sed -i "s/ffi.NativeFunction<ffi.Bool Function(DartPort/ffi.NativeFunction<ffi.Uint8 Function(DartPort/g" flutter/lib/generated_bridge.dart\')\n\'\'\'\nnew = \'\'\'def ffi_bindgen_function_refactor():\n    # workaround ffigen\n    system2(\n        \'sed -i "s/ffi.NativeFunction<ffi.Bool Function(DartPort/ffi.NativeFunction<ffi.Uint8 Function(DartPort/g" flutter/lib/generated_bridge.dart\')\n    if os.path.exists("scripts/fix_generated_bridge_compat.py"):\n        system2("python3 scripts/fix_generated_bridge_compat.py")\n\'\'\'\nif new not in text:\n    if old not in text:\n        print("WARN: build.py ffi_bindgen_function_refactor block not found; skipped")\n    else:\n        write(build_py, text.replace(old, new, 1))\n        print(f"PATCHED: {build_py}")\nelse:\n    print(f"OK already patched: {build_py}")\n\n# 4) Dart null-safety/type patches reported by the Windows Flutter build.\n# Patch every LastWindowPosition.loadFromString(pos) occurrence; there are multiple helpers.\ncommon_path = "flutter/lib/common.dart"\ncommon_text = read(common_path)\nif "LastWindowPosition.loadFromString(pos);" in common_text:\n    write(common_path, common_text.replace(\n        "LastWindowPosition.loadFromString(pos);",\n        "LastWindowPosition.loadFromString(pos ?? \'\');",\n    ))\n    print(f"PATCHED: {common_path} (all LastWindowPosition nullable pos calls)")\nelse:\n    print(f"OK already patched: {common_path} (LastWindowPosition)")\nreplace_once(\n    "flutter/lib/common/widgets/dialog.dart",\n    "controller.text = osPassword;",\n    "controller.text = osPassword ?? \'\';",\n)\nreplace_once(\n    "flutter/lib/desktop/widgets/remote_toolbar.dart",\n    "final results = await Future.wait([",\n    "final results = await Future.wait<bool?>([",\n)\n\n# Force String generic on _Radio calls in desktop settings to avoid Dart inferring dynamic.\ndsp = "flutter/lib/desktop/pages/desktop_setting_page.dart"\ntext = read(dsp)\nif "_Radio(context" in text:\n    text = text.replace("_Radio(context", "_Radio<String>(context")\n    write(dsp, text)\n    print(f"PATCHED: {dsp} (_Radio<String>)")\nelse:\n    print(f"OK already patched: {dsp} (_Radio<String>)")\n\n# Null bool fixes in toolbar around follow/show remote cursor.\ntoolbar = "flutter/lib/common/widgets/toolbar.dart"\ntext = read(toolbar)\nrepls = {\n    """                state.value = bind.sessionGetToggleOptionSync(\n                    sessionId: sessionId, arg: option);""": """                state.value = bind.sessionGetToggleOptionSync(\n                        sessionId: sessionId, arg: option) ??\n                    false;""",\n    """    final value =\n        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);""": """    final value =\n            bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option) ??\n        false;""",\n    """    final showCursorEnabled = bind.sessionGetToggleOptionSync(\n        sessionId: sessionId, arg: showCursorOption);""": """    final showCursorEnabled =\n        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: showCursorOption) ??\n            false;""",\n    """      showCursorState.value = bind.sessionGetToggleOptionSync(\n          sessionId: sessionId, arg: showCursorOption);""": """      showCursorState.value = bind.sessionGetToggleOptionSync(\n              sessionId: sessionId, arg: showCursorOption) ??\n          false;""",\n    """          value = bind.sessionGetToggleOptionSync(\n              sessionId: sessionId, arg: option);""": """          value = bind.sessionGetToggleOptionSync(\n                  sessionId: sessionId, arg: option) ??\n              false;""",\n    """            showCursorState.value = bind.sessionGetToggleOptionSync(\n                sessionId: sessionId, arg: showCursorOption);""": """            showCursorState.value = bind.sessionGetToggleOptionSync(\n                    sessionId: sessionId, arg: showCursorOption) ??\n                false;""",\n    """        peerState.value =\n            bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);""": """        peerState.value =\n                bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option) ??\n            false;""",\n}\nchanged = False\nfor old, new in repls.items():\n    if old in text and new not in text:\n        text = text.replace(old, new, 1)\n        changed = True\nif changed:\n    write(toolbar, text)\n    print(f"PATCHED: {toolbar}")\nelse:\n    print(f"OK/no matching toolbar patches needed: {toolbar}")\n\nprint("\\nDone. Now run:")\nprint("  flutter clean")\nprint("  flutter pub get")\nprint("  flutter build windows --release")\nprint("or push and rerun GitHub Actions.")\n'
+
+
+ICON_ASSET_SCRIPT = '#!/usr/bin/env python3\n"""\nGenerate all FoxxDesk app/logo image assets from a single source: res/icon.png.\n\nv3 scope:\n- Root res PNG/SVG/ICO assets.\n- Flutter shared asset: flutter/assets/icon.svg.\n- Android launcher/status icons under flutter/android/app/src/main/res/mipmap-*.\n- Android fastlane store icon.\n- iOS AppIcon.appiconset PNGs.\n- Windows app_icon.ico.\n- macOS AppIcon.icns.\n\nExplicit exclusions:\n- res/logo-header.svg\n- res/design.svg\n- res/icon.png, because it is the source image.\n\nNotes:\n- SVG files are SVG wrappers with embedded base64 PNG. They preserve the original dimensions/viewBox,\n  but are not true vector traces.\n- iOS icons are flattened to RGB because App Store icons must not contain transparency.\n- Android notification/status icons are generated as white alpha-mask icons.\n"""\n\nfrom __future__ import annotations\n\nimport argparse\nimport base64\nimport datetime as dt\nimport io\nimport json\nimport shutil\nfrom pathlib import Path\nfrom typing import Any\n\nfrom PIL import Image, ImageOps\n\nSCRIPT_VERSION = "icon-assets-v3-all-system-logos-2026-07-01"\n\ntry:\n    LANCZOS = Image.Resampling.LANCZOS\nexcept AttributeError:  # Pillow < 9\n    LANCZOS = Image.LANCZOS\n\nEXCLUDED = {\n    "res/logo-header.svg",\n    "res/design.svg",\n    "res/icon.png",\n}\n\nROOT_PNG_ASSETS = [\n    {"path": "res/32x32.png", "size": (32, 32), "mode": "RGBA"},\n    {"path": "res/64x64.png", "size": (64, 64), "mode": "RGBA"},\n    {"path": "res/128x128.png", "size": (128, 128), "mode": "RGBA"},\n    {"path": "res/128x128@2x.png", "size": (256, 256), "mode": "RGBA"},\n    {"path": "res/FoxxDesk.png", "size": (1600, 1600), "mode": "RGBA"},\n    {"path": "res/mac-icon.png", "size": (1024, 1024), "mode": "RGBA"},\n    {"path": "res/mac-tray-dark-x2.png", "size": (60, 60), "mode": "RGBA"},\n    {"path": "res/mac-tray-light-x2.png", "size": (48, 48), "mode": "LA"},\n    {"path": "fastlane/metadata/android/en-US/images/icon.png", "size": (256, 256), "mode": "RGB"},\n]\n\nSVG_ASSETS = [\n    {"path": "res/FoxxDesk.svg", "width": 128, "height": 128, "viewBox": "0 0 96 95.999999"},\n    {"path": "res/logo.svg", "width": 26, "height": 26, "viewBox": "0 0 96 95.999999"},\n    {"path": "res/foxxdesk-banner.svg", "width": 114, "height": 26, "viewBox": "66.993 897.484 113.652 26"},\n    {"path": "res/scalable.svg", "width": 32, "height": 32, "viewBox": "66.993 897.484 32 32.000001"},\n    {"path": "flutter/assets/icon.svg", "width": 150, "height": 150, "viewBox": "0 0 112.5 112.499997"},\n]\n\nICO_ASSETS = [\n    {"path": "res/icon.ico", "render_size": (256, 256), "ico_sizes": [(16,16), (24,24), (32,32), (48,48), (64,64), (128,128), (256,256)]},\n    {"path": "res/tray-icon.ico", "render_size": (32, 32), "ico_sizes": [(16,16), (24,24), (32,32)]},\n    {"path": "flutter/windows/runner/resources/app_icon.ico", "render_size": (256, 256), "ico_sizes": [(16,16), (24,24), (32,32), (48,48), (64,64), (128,128), (256,256)]},\n]\n\nICNS_ASSETS = [\n    {"path": "flutter/macos/Runner/AppIcon.icns", "size": (1024, 1024)},\n]\n\nANDROID_DENSITIES = {\n    "mdpi": 1.0,\n    "hdpi": 1.5,\n    "xhdpi": 2.0,\n    "xxhdpi": 3.0,\n    "xxxhdpi": 4.0,\n}\n\nANDROID_PNG_ASSETS: list[dict[str, Any]] = []\nfor density, scale in ANDROID_DENSITIES.items():\n    folder = f"flutter/android/app/src/main/res/mipmap-{density}"\n    launcher = int(round(48 * scale))\n    foreground = int(round(108 * scale))\n    stat = int(round(24 * scale))\n    ANDROID_PNG_ASSETS.extend([\n        {"path": f"{folder}/ic_launcher.png", "size": (launcher, launcher), "mode": "RGBA"},\n        {"path": f"{folder}/ic_launcher_round.png", "size": (launcher, launcher), "mode": "RGBA", "round_mask": True},\n        {"path": f"{folder}/ic_launcher_foreground.png", "size": (foreground, foreground), "mode": "RGBA"},\n        {"path": f"{folder}/ic_stat_logo.png", "size": (stat, stat), "mode": "LA"},\n    ])\n\nIOS_ICON_SIZES = [\n    ("Icon-App-20x20@1x.png", 20),\n    ("Icon-App-20x20@2x.png", 40),\n    ("Icon-App-20x20@3x.png", 60),\n    ("Icon-App-29x29@1x.png", 29),\n    ("Icon-App-29x29@2x.png", 58),\n    ("Icon-App-29x29@3x.png", 87),\n    ("Icon-App-40x40@1x.png", 40),\n    ("Icon-App-40x40@2x.png", 80),\n    ("Icon-App-40x40@3x.png", 120),\n    ("Icon-App-60x60@2x.png", 120),\n    ("Icon-App-60x60@3x.png", 180),\n    ("Icon-App-76x76@1x.png", 76),\n    ("Icon-App-76x76@2x.png", 152),\n    ("Icon-App-83.5x83.5@2x.png", 167),\n    ("Icon-App-1024x1024@1x.png", 1024),\n]\n\nIOS_PNG_ASSETS = [\n    {\n        "path": f"flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/{name}",\n        "size": (size, size),\n        "mode": "RGB",\n    }\n    for name, size in IOS_ICON_SIZES\n]\n\n# A closed manifest of files the script is allowed to generate/update.\nALL_IMAGE_ASSETS: list[dict[str, Any]] = (\n    ROOT_PNG_ASSETS\n    + ANDROID_PNG_ASSETS\n    + IOS_PNG_ASSETS\n)\n\nEXPECTED_CONTENTS_JSON_PATH = "flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json"\n\n\ndef parse_args() -> argparse.Namespace:\n    parser = argparse.ArgumentParser(description="Generate all system logo assets from res/icon.png")\n    parser.add_argument("--target", default=".", help="Project root. Default: current directory")\n    parser.add_argument("--source", default="res/icon.png", help="Source image relative to target. Default: res/icon.png")\n    parser.add_argument("--ios-background", default="#FFFFFF", help="Background used when flattening iOS/RGB icons. Default: #FFFFFF")\n    parser.add_argument("--update-ios-contents", action="store_true", help="Also normalize iOS AppIcon Contents.json")\n    mode = parser.add_mutually_exclusive_group(required=True)\n    mode.add_argument("--dry-run", action="store_true", help="Show what would be generated")\n    mode.add_argument("--apply", action="store_true", help="Generate/update files")\n    parser.add_argument("--yes", action="store_true", help="Skip confirmation in --apply mode")\n    return parser.parse_args()\n\n\ndef hex_to_rgb(value: str) -> tuple[int, int, int]:\n    value = value.strip().lstrip("#")\n    if len(value) == 3:\n        value = "".join(ch * 2 for ch in value)\n    if len(value) != 6:\n        raise ValueError(f"Cor invalida: {value!r}")\n    return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)\n\n\ndef ensure_rgba(im: Image.Image) -> Image.Image:\n    return im.convert("RGBA") if im.mode != "RGBA" else im\n\n\ndef square_canvas(src: Image.Image, padding_ratio: float = 0.0) -> Image.Image:\n    """Return source centered in a square transparent canvas."""\n    src = ensure_rgba(src)\n    side = max(src.size)\n    canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))\n    canvas.alpha_composite(src, ((side - src.width) // 2, (side - src.height) // 2))\n    if padding_ratio <= 0:\n        return canvas\n    padded_side = round(side / (1 - padding_ratio * 2))\n    padded = Image.new("RGBA", (padded_side, padded_side), (0, 0, 0, 0))\n    padded.alpha_composite(canvas, ((padded_side - side) // 2, (padded_side - side) // 2))\n    return padded\n\n\ndef resize_image(src: Image.Image, size: tuple[int, int]) -> Image.Image:\n    return square_canvas(src).resize(size, LANCZOS)\n\n\ndef flatten_to_rgb(im: Image.Image, background: tuple[int, int, int]) -> Image.Image:\n    rgba = ensure_rgba(im)\n    bg = Image.new("RGBA", rgba.size, (*background, 255))\n    bg.alpha_composite(rgba)\n    return bg.convert("RGB")\n\n\ndef white_alpha_mask(src: Image.Image, size: tuple[int, int]) -> Image.Image:\n    """Create Android/macOS style monochrome icon as white + alpha mask."""\n    rgba = resize_image(src, size)\n    alpha = rgba.getchannel("A")\n    # If source has no useful alpha, derive a mask from luminance.\n    if not alpha.getbbox():\n        lum = ImageOps.grayscale(rgba.convert("RGB"))\n        alpha = ImageOps.invert(lum)\n    white = Image.new("L", size, 255)\n    return Image.merge("LA", (white, alpha))\n\n\ndef apply_round_mask(im: Image.Image) -> Image.Image:\n    rgba = ensure_rgba(im)\n    mask = Image.new("L", rgba.size, 0)\n    # Pillow ImageDraw imported lazily to keep top imports simple.\n    from PIL import ImageDraw\n    draw = ImageDraw.Draw(mask)\n    draw.ellipse((0, 0, rgba.width - 1, rgba.height - 1), fill=255)\n    rgba.putalpha(Image.composite(rgba.getchannel("A"), Image.new("L", rgba.size, 0), mask))\n    return rgba\n\n\ndef png_bytes(src: Image.Image, size: tuple[int, int], mode: str, background: tuple[int, int, int], round_mask: bool = False) -> bytes:\n    if mode == "LA":\n        out_img = white_alpha_mask(src, size)\n    else:\n        out_img = resize_image(src, size)\n        if round_mask:\n            out_img = apply_round_mask(out_img)\n        if mode == "RGB":\n            out_img = flatten_to_rgb(out_img, background)\n        elif mode == "RGBA":\n            out_img = ensure_rgba(out_img)\n        else:\n            out_img = out_img.convert(mode)\n    out = io.BytesIO()\n    out_img.save(out, format="PNG", optimize=True)\n    return out.getvalue()\n\n\ndef parse_viewbox(viewbox: str) -> tuple[float, float, float, float]:\n    parts = [float(x) for x in viewbox.replace(",", " ").split()]\n    if len(parts) != 4:\n        raise ValueError(f"viewBox invalido: {viewbox}")\n    return parts[0], parts[1], parts[2], parts[3]\n\n\ndef fmt_num(value: float) -> str:\n    if float(value).is_integer():\n        return str(int(value))\n    return f"{value:.6f}".rstrip("0").rstrip(".")\n\n\ndef svg_bytes(src: Image.Image, width: int, height: int, viewbox: str) -> bytes:\n    min_x, min_y, vb_w, vb_h = parse_viewbox(viewbox)\n    render_w = max(1, round(vb_w))\n    render_h = max(1, round(vb_h))\n    png = png_bytes(src, (render_w, render_h), "RGBA", (255, 255, 255))\n    b64 = base64.b64encode(png).decode("ascii")\n    svg = f\'\'\'<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg"\n     xmlns:xlink="http://www.w3.org/1999/xlink"\n     width="{width}"\n     height="{height}"\n     viewBox="{viewbox}"\n     version="1.1">\n  <image x="{fmt_num(min_x)}"\n         y="{fmt_num(min_y)}"\n         width="{fmt_num(vb_w)}"\n         height="{fmt_num(vb_h)}"\n         preserveAspectRatio="xMidYMid meet"\n         xlink:href="data:image/png;base64,{b64}" />\n</svg>\n\'\'\'\n    return svg.encode("utf-8")\n\n\ndef ico_bytes(src: Image.Image, render_size: tuple[int, int], ico_sizes: list[tuple[int, int]]) -> bytes:\n    out = io.BytesIO()\n    resize_image(src, render_size).save(out, format="ICO", sizes=ico_sizes)\n    return out.getvalue()\n\n\ndef icns_bytes(src: Image.Image, size: tuple[int, int]) -> bytes:\n    """Generate macOS .icns. Requires Pillow with ICNS writer support."""\n    out = io.BytesIO()\n    resize_image(src, size).save(out, format="ICNS")\n    return out.getvalue()\n\n\ndef ios_contents_json_bytes() -> bytes:\n    images = [\n        {"size": "20x20", "idiom": "iphone", "filename": "Icon-App-20x20@2x.png", "scale": "2x"},\n        {"size": "20x20", "idiom": "iphone", "filename": "Icon-App-20x20@3x.png", "scale": "3x"},\n        {"size": "29x29", "idiom": "iphone", "filename": "Icon-App-29x29@1x.png", "scale": "1x"},\n        {"size": "29x29", "idiom": "iphone", "filename": "Icon-App-29x29@2x.png", "scale": "2x"},\n        {"size": "29x29", "idiom": "iphone", "filename": "Icon-App-29x29@3x.png", "scale": "3x"},\n        {"size": "40x40", "idiom": "iphone", "filename": "Icon-App-40x40@2x.png", "scale": "2x"},\n        {"size": "40x40", "idiom": "iphone", "filename": "Icon-App-40x40@3x.png", "scale": "3x"},\n        {"size": "60x60", "idiom": "iphone", "filename": "Icon-App-60x60@2x.png", "scale": "2x"},\n        {"size": "60x60", "idiom": "iphone", "filename": "Icon-App-60x60@3x.png", "scale": "3x"},\n        {"size": "20x20", "idiom": "ipad", "filename": "Icon-App-20x20@1x.png", "scale": "1x"},\n        {"size": "20x20", "idiom": "ipad", "filename": "Icon-App-20x20@2x.png", "scale": "2x"},\n        {"size": "29x29", "idiom": "ipad", "filename": "Icon-App-29x29@1x.png", "scale": "1x"},\n        {"size": "29x29", "idiom": "ipad", "filename": "Icon-App-29x29@2x.png", "scale": "2x"},\n        {"size": "40x40", "idiom": "ipad", "filename": "Icon-App-40x40@1x.png", "scale": "1x"},\n        {"size": "40x40", "idiom": "ipad", "filename": "Icon-App-40x40@2x.png", "scale": "2x"},\n        {"size": "76x76", "idiom": "ipad", "filename": "Icon-App-76x76@1x.png", "scale": "1x"},\n        {"size": "76x76", "idiom": "ipad", "filename": "Icon-App-76x76@2x.png", "scale": "2x"},\n        {"size": "83.5x83.5", "idiom": "ipad", "filename": "Icon-App-83.5x83.5@2x.png", "scale": "2x"},\n        {"size": "1024x1024", "idiom": "ios-marketing", "filename": "Icon-App-1024x1024@1x.png", "scale": "1x"},\n    ]\n    payload = {"images": images, "info": {"version": 1, "author": "xcode"}}\n    return (json.dumps(payload, indent=2, ensure_ascii=False) + "\\n").encode("utf-8")\n\n\ndef confirm() -> None:\n    ans = input("Aplicar geracao de TODOS os assets de logo? [y/N]: ").strip().lower()\n    if ans not in {"y", "yes", "s", "sim"}:\n        raise SystemExit("Operacao cancelada.")\n\n\ndef backup_file(root: Path, rel: str, backup_root: Path) -> None:\n    src = root / rel\n    dst = backup_root / rel\n    dst.parent.mkdir(parents=True, exist_ok=True)\n    shutil.copy2(src, dst)\n\n\ndef write_if_changed(root: Path, rel: str, data: bytes, dry_run: bool, backup_root: Path, report: list[str]) -> str:\n    rel = rel.replace("\\\\", "/")\n    if rel in EXCLUDED:\n        report.append(f"- excluido por regra: `{rel}`")\n        return "skipped"\n\n    path = root / rel\n    existed = path.exists()\n    current = path.read_bytes() if existed else None\n\n    if current == data:\n        report.append(f"- ja atualizado: `{rel}`")\n        return "unchanged"\n\n    if dry_run:\n        action = "sera atualizado" if existed else "sera criado"\n        report.append(f"- {action}: `{rel}`")\n        return "planned"\n\n    if existed:\n        backup_file(root, rel, backup_root)\n\n    path.parent.mkdir(parents=True, exist_ok=True)\n    path.write_bytes(data)\n\n    if existed:\n        report.append(f"- atualizado: `{rel}` (backup em `{backup_root}`)")\n    else:\n        report.append(f"- criado: `{rel}`")\n    return "written"\n\n\ndef generate(root: Path, source_rel: str, dry_run: bool, ios_bg: tuple[int, int, int], update_ios_contents: bool) -> tuple[list[str], dict[str, int], Path]:\n    src_path = root / source_rel\n    if not src_path.exists():\n        raise FileNotFoundError(f"Arquivo fonte nao encontrado: {src_path}")\n\n    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")\n    backup_root = root / ".icon_asset_backup" / timestamp\n    report: list[str] = []\n    stats = {"planned": 0, "written": 0, "unchanged": 0, "skipped": 0, "errors": 0}\n\n    with Image.open(src_path) as im:\n        src = ensure_rgba(im)\n\n        for item in ALL_IMAGE_ASSETS:\n            try:\n                data = png_bytes(src, item["size"], item.get("mode", "RGBA"), ios_bg, bool(item.get("round_mask")))\n                status = write_if_changed(root, item["path"], data, dry_run, backup_root, report)\n                stats[status] += 1\n            except Exception as exc:\n                report.append(f"- ERRO PNG `{item[\'path\']}`: {exc}")\n                stats["errors"] += 1\n\n        for item in SVG_ASSETS:\n            try:\n                data = svg_bytes(src, item["width"], item["height"], item["viewBox"])\n                status = write_if_changed(root, item["path"], data, dry_run, backup_root, report)\n                stats[status] += 1\n            except Exception as exc:\n                report.append(f"- ERRO SVG `{item[\'path\']}`: {exc}")\n                stats["errors"] += 1\n\n        for item in ICO_ASSETS:\n            try:\n                data = ico_bytes(src, item["render_size"], item["ico_sizes"])\n                status = write_if_changed(root, item["path"], data, dry_run, backup_root, report)\n                stats[status] += 1\n            except Exception as exc:\n                report.append(f"- ERRO ICO `{item[\'path\']}`: {exc}")\n                stats["errors"] += 1\n\n        for item in ICNS_ASSETS:\n            try:\n                data = icns_bytes(src, item["size"])\n                status = write_if_changed(root, item["path"], data, dry_run, backup_root, report)\n                stats[status] += 1\n            except Exception as exc:\n                report.append(f"- ERRO ICNS `{item[\'path\']}`: {exc}")\n                stats["errors"] += 1\n\n        if update_ios_contents:\n            try:\n                data = ios_contents_json_bytes()\n                status = write_if_changed(root, EXPECTED_CONTENTS_JSON_PATH, data, dry_run, backup_root, report)\n                stats[status] += 1\n            except Exception as exc:\n                report.append(f"- ERRO JSON `{EXPECTED_CONTENTS_JSON_PATH}`: {exc}")\n                stats["errors"] += 1\n\n    return report, stats, backup_root\n\n\ndef main() -> None:\n    args = parse_args()\n    root = Path(args.target).resolve()\n    if not root.exists() or not root.is_dir():\n        raise SystemExit(f"Pasta alvo invalida: {root}")\n\n    if args.apply and not args.yes:\n        confirm()\n\n    ios_bg = hex_to_rgb(args.ios_background)\n    report, stats, backup_root = generate(root, args.source, args.dry_run, ios_bg, args.update_ios_contents)\n    mode = "dry-run" if args.dry_run else "apply"\n    changed = stats["planned"] if args.dry_run else stats["written"]\n    report_path = root / "icon_assets_report.md"\n\n    total_manifest = len(ALL_IMAGE_ASSETS) + len(SVG_ASSETS) + len(ICO_ASSETS) + len(ICNS_ASSETS) + (1 if args.update_ios_contents else 0)\n    lines = [\n        "# Relatorio de geracao de assets",\n        "",\n        f"- Script: `{SCRIPT_VERSION}`",\n        f"- Modo: `{mode}`",\n        f"- Projeto alvo: `{root}`",\n        f"- Fonte: `{args.source}`",\n        f"- Total no manifesto: `{total_manifest}`",\n        f"- Backup: `{backup_root if args.apply and stats[\'written\'] else \'nao criado\'}`",\n        "",\n        "## Regras",\n        "",\n        "- Fonte unica: `res/icon.png`.",\n        "- Nunca altera `res/logo-header.svg`.",\n        "- Nunca altera `res/design.svg`.",\n        "- Nunca altera `res/icon.png` porque ele e a fonte.",\n        "- SVGs sao wrappers com PNG embutido; nao sao vetores reais.",\n        "- iOS AppIcon e gerado em RGB sem transparencia.",\n        "- Android `ic_stat_logo.png` e gerado como branco + mascara alpha.",\n        "",\n        "## Resumo",\n        "",\n        f"- Alteraveis/criados no modo atual: `{changed}`",\n        f"- Ja atualizados: `{stats[\'unchanged\']}`",\n        f"- Pulados/excluidos: `{stats[\'skipped\']}`",\n        f"- Erros: `{stats[\'errors\']}`",\n        "",\n        "## Arquivos tratados",\n        "",\n    ]\n    lines.extend(report)\n    report_path.write_text("\\n".join(lines) + "\\n", encoding="utf-8")\n\n    print(f"Modo: {mode} | arquivos alterados: {changed} | ja atualizados: {stats[\'unchanged\']} | erros: {stats[\'errors\']} | relatorio: {report_path}")\n\n\nif __name__ == "__main__":\n    main()'
 
 # Nomes/URLs que devem continuar como upstream ou API interna.
 PROTECT_PATTERNS: Sequence[str] = (
@@ -1778,6 +1785,8 @@ def build_report(report: Dict[str, Any], args: argparse.Namespace, target: Path)
     ]
     if report.get("backup_dir"):
         lines.append(f"- Backup: `{report['backup_dir']}`")
+    if report.get("log_file"):
+        lines.append(f"- Log detalhado: `{report['log_file']}`")
     lines.append("")
 
     def section(title: str, items: Iterable[Any]) -> None:
@@ -2842,8 +2851,332 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
     _PRE_V27_MAIN_VALIDATE(target, report)
     validate_generated_helper_syntax_v27(target, report)
 
+_PRE_V28_ENSURE_GENERATED_FILES = ensure_v25_generated_files
+
+def ensure_v25_generated_files(target: Path, args: argparse.Namespace, report: Dict[str, Any], backup_root: Optional[Path]) -> None:  # type: ignore[override]
+    """V28: mantém helpers anteriores e adiciona scripts/apply_foxxdesk_icon.py."""
+    _PRE_V28_ENSURE_GENERATED_FILES(target, args, report, backup_root)
+    _record_generated_text_file(
+        target,
+        "scripts/apply_foxxdesk_icon.py",
+        ICON_ASSET_SCRIPT,
+        args,
+        report,
+        backup_root,
+        "criar/atualizar gerador de assets de ícone FoxxDesk",
+        create_only=False,
+    )
+
+
+def setup_logging_v28(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:
+    """Configura logging da V28 em arquivo e console."""
+    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v28.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    level = logging.DEBUG if getattr(args, "verbose", False) else logging.INFO
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.setLevel(level)
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(level)
+    root_logger.addHandler(file_handler)
+    if not getattr(args, "quiet", False):
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        console_handler.setLevel(level)
+        root_logger.addHandler(console_handler)
+    report["log_file"] = str(log_path)
+    logging.info("FoxxDesk rebrand %s iniciado", SCRIPT_VERSION)
+    logging.info("Target: %s", target)
+    logging.info("Modo: %s | profile=%s | scan_all=%s", "apply" if args.apply else "dry-run", args.profile, args.scan_all)
+    logging.info("Icon assets: %s | source=%s", bool(getattr(args, "apply_icon_assets", False)), getattr(args, "icon_source", "res/icon.png"))
+
+
+def run_icon_assets_v28(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:
+    """Executa o gerador de ícones apenas quando --apply-icon-assets for informado."""
+    rel = "scripts/apply_foxxdesk_icon.py"
+    report["analyzed_files"].append(rel)
+    if not getattr(args, "apply_icon_assets", False):
+        logging.info("Icon assets: pulado porque --apply-icon-assets não foi informado")
+        report["ignored_files"].append("icon assets (flag --apply-icon-assets não informada)")
+        return
+
+    source_rel = getattr(args, "icon_source", "res/icon.png") or "res/icon.png"
+    source_path = target / source_rel
+    if not source_path.exists():
+        msg = f"fonte de ícone não encontrada: {source_rel}; informe --icon-source ou crie res/icon.png"
+        logging.error("Icon assets: %s", msg)
+        report["pending"].append({"file": source_rel, "message": msg})
+        return
+
+    mode_arg = "--apply" if args.apply else "--dry-run"
+    cmd = [
+        sys.executable,
+        rel,
+        "--target",
+        str(target),
+        "--source",
+        source_rel,
+        "--ios-background",
+        getattr(args, "icon_ios_background", "#FFFFFF"),
+        mode_arg,
+    ]
+    if args.apply:
+        cmd.append("--yes")
+    if getattr(args, "icon_update_ios_contents", False):
+        cmd.append("--update-ios-contents")
+
+    logging.info("Icon assets: executando %s", " ".join(cmd))
+    try:
+        completed = subprocess.run(cmd, cwd=str(target), text=True, capture_output=True)
+    except Exception as exc:
+        logging.exception("Icon assets: falha ao executar gerador")
+        report["pending"].append({"file": rel, "message": f"falha ao executar gerador de ícones: {exc}"})
+        return
+
+    if completed.stdout:
+        logging.info("Icon assets stdout:\n%s", completed.stdout.strip())
+    if completed.stderr:
+        logging.warning("Icon assets stderr:\n%s", completed.stderr.strip())
+
+    if completed.returncode != 0:
+        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v29.log"})
+        return
+
+    changed_match = re.search(r"arquivos alterados:\s*(\d+)", completed.stdout or "")
+    icon_changed = int(changed_match.group(1)) if changed_match else 1
+    if icon_changed > 0:
+        report["changed_files"].append("icon assets")
+        report["changes"].append({
+            "file": "icon assets",
+            "line": 1,
+            "status": "gerado" if args.apply else "validado em dry-run",
+            "action": "gerar assets de ícone FoxxDesk",
+            "message": f"gerador executado com fonte {source_rel}; arquivos alterados/planejados: {icon_changed}; relatório em icon_assets_report.md",
+        })
+    else:
+        report["already_applied_files"].append("icon assets")
+        logging.info("Icon assets: nenhum asset precisava mudar")
+
+
+
+# ---------------------------------------------------------------------------
+# V29: corrige ParserError do PowerShell no flutter-build.yml.
+# A V28/V26 ainda podia deixar caminho com subexpressão:
+#   .\$($driverZip -replace "\.zip$", "")
+# Isso quebra o script temporário do GitHub Actions. A V29 remove qualquer
+# $() dentro de path e usa variáveis simples, com checksumPattern seguro.
+# ---------------------------------------------------------------------------
+_PRE_V29_PATCH_TEXT = patch_text
+_PRE_V29_VALIDATE_BUILD_SAFETY = validate_build_safety
+
+
+def _v29_has_line(text: str, needle: str) -> bool:
+    return any(line.strip() == needle.strip() for line in normalize_lf(text).splitlines())
+
+
+def _v29_ensure_line_after(text: str, anchor_regex: str, new_line: str) -> str:
+    if _v29_has_line(text, new_line):
+        return text
+    m = re.search(anchor_regex, text, flags=re.MULTILINE)
+    if not m:
+        return text
+    line_end = text.find('\n', m.end())
+    if line_end == -1:
+        return text + '\n' + new_line
+    return text[:line_end + 1] + new_line + '\n' + text[line_end + 1:]
+
+
+def _v29_replace_driver_extract_move_lines(text: str) -> str:
+    """Remove linhas PowerShell frágeis de extração/move do driver."""
+    # Qualquer linha com mv/Move-Item usando .\$($driverZip -replace ...) para rustdesk/foxxdesk drivers.
+    bad_move_re = re.compile(
+        r'(?m)^(?P<indent>[ \t]*)(?:mv|Move-Item)\s+-Force\s+\.\\\$\(\$driverZip\s+-replace[^\n]*\)\s+(?:\.\\|\./)?(?:rustdesk|foxxdesk)[/\\]drivers[/\\](?:RustDeskPrinterDriver|FoxxDeskPrinterDriver)\s*$',
+    )
+    text = bad_move_re.sub(
+        lambda m: (
+            f'{m.group("indent")}$driverExtractDir = Join-Path "." $driverExtractName\n'
+            f'{m.group("indent")}Move-Item -Force $driverExtractDir ".\\foxxdesk\\drivers\\FoxxDeskPrinterDriver"'
+        ),
+        text,
+    )
+
+    # Variantes antigas com diretório literal do ZIP upstream ou destino errado.
+    literal_move_re = re.compile(
+        r'(?m)^(?P<indent>[ \t]*)(?:mv|Move-Item)\s+-Force\s+(?:\.\\|\./)?(?:rustdesk_printer_driver_v4-1\.4|\$driverExtractName)\s+(?:\.\\|\./)?(?:rustdesk|foxxdesk)[/\\]drivers[/\\](?:RustDeskPrinterDriver|FoxxDeskPrinterDriver)\s*$',
+    )
+    text = literal_move_re.sub(
+        lambda m: (
+            f'{m.group("indent")}$driverExtractDir = Join-Path "." $driverExtractName\n'
+            f'{m.group("indent")}Move-Item -Force $driverExtractDir ".\\foxxdesk\\drivers\\FoxxDeskPrinterDriver"'
+        ),
+        text,
+    )
+
+    # Normaliza comandos que já usam driverExtractDir, mas apontam para rustdesk ou usam mv.
+    dir_move_re = re.compile(
+        r'(?m)^(?P<indent>[ \t]*)(?:mv|Move-Item)\s+-Force\s+\$driverExtractDir\s+(?:\.\\|\./)?(?:rustdesk|foxxdesk)[/\\]drivers[/\\](?:RustDeskPrinterDriver|FoxxDeskPrinterDriver)\s*$',
+    )
+    text = dir_move_re.sub(
+        lambda m: f'{m.group("indent")}Move-Item -Force $driverExtractDir ".\\foxxdesk\\drivers\\FoxxDeskPrinterDriver"',
+        text,
+    )
+
+    # Deduplica linhas driverExtractDir duplicadas consecutivas.
+    text = re.sub(
+        r'(?m)^(?P<indent>[ \t]*)\$driverExtractDir = Join-Path "\." \$driverExtractName\n(?P=indent)\$driverExtractDir = Join-Path "\." \$driverExtractName\n',
+        r'\g<indent>$driverExtractDir = Join-Path "." $driverExtractName\n',
+        text,
+    )
+    return text
+
+
+def patch_flutter_build_printer_driver_v29(text: str) -> str:
+    text = normalize_lf(text)
+
+    # 1) Nunca usar -replace dentro de caminho. Define nome extraído com .NET,
+    # sem regex/aspas problemáticas no PowerShell.
+    text = re.sub(
+        r'(?m)^([ \t]*)\$driverExtractName\s*=\s*\$driverZip\s+-replace\s+["\']\\\.zip\$["\']\s*,\s*["\']{0,2}\s*$',
+        r'\1$driverExtractName = [System.IO.Path]::GetFileNameWithoutExtension($driverZip)',
+        text,
+    )
+    # Variante mais tolerante para linhas parcialmente geradas.
+    text = re.sub(
+        r'(?m)^([ \t]*)\$driverExtractName\s*=\s*\$driverZip\s+-replace.*$',
+        r'\1$driverExtractName = [System.IO.Path]::GetFileNameWithoutExtension($driverZip)',
+        text,
+    )
+    if '$driverZip = "${upstreamPrinterOrg}_printer_driver_v4-1.4.zip"' in text and '$driverExtractName = [System.IO.Path]::GetFileNameWithoutExtension($driverZip)' not in text:
+        text = _v29_ensure_line_after(
+            text,
+            r'^\s*\$driverZip\s*=\s*"\$\{upstreamPrinterOrg\}_printer_driver_v4-1\.4\.zip"\s*$',
+            '            $driverExtractName = [System.IO.Path]::GetFileNameWithoutExtension($driverZip)',
+        )
+
+    # Deduplica driverExtractName quando a V26/V28 reinserir a linha antiga e a V29 converter.
+    text = re.sub(
+        r'(?m)^([ \t]*)\$driverExtractName = \[System\.IO\.Path\]::GetFileNameWithoutExtension\(\$driverZip\)\n\1\$driverExtractName = \[System\.IO\.Path\]::GetFileNameWithoutExtension\(\$driverZip\)\n',
+        r'\1$driverExtractName = [System.IO.Path]::GetFileNameWithoutExtension($driverZip)\n',
+        text,
+    )
+
+    # 2) Checksum seguro: evita double-quoted regex com $ no final.
+    checksum_re = re.compile(
+        r'(?m)^(?P<indent>[ \t]*)\$checksum_driver\s*=\s*\(Select-String\s+-Path\s+\.\\sha256sums\s+-Pattern\s+[^\n]*driverZip[^\n]*\)\.Matches\.Groups\[1\]\.Value\s*$'
+    )
+    text = checksum_re.sub(
+        lambda m: (
+            f'{m.group("indent")}$driverZipRegex = [regex]::Escape($driverZip)\n'
+            f'{m.group("indent")}$checksumPattern = \'^([a-fA-F0-9]{{64}}) \\*\' + $driverZipRegex + \'$\'\n'
+            f'{m.group("indent")}$checksum_driver = (Select-String -Path .\\sha256sums -Pattern $checksumPattern).Matches.Groups[1].Value'
+        ),
+        text,
+    )
+    # Deduplica checksum helper, se versões anteriores inserirem mais de uma vez.
+    text = re.sub(
+        r'(?m)^([ \t]*)\$driverZipRegex = \[regex\]::Escape\(\$driverZip\)\n\1\$checksumPattern = \'\^\(\[a-fA-F0-9\]\{64\}\) \\\*\' \+ \$driverZipRegex \+ \'\$\'\n\1\$driverZipRegex = \[regex\]::Escape\(\$driverZip\)\n\1\$checksumPattern = \'\^\(\[a-fA-F0-9\]\{64\}\) \\\*\' \+ \$driverZipRegex \+ \'\$\'\n',
+        r'\1$driverZipRegex = [regex]::Escape($driverZip)\n\1$checksumPattern = \'^([a-fA-F0-9]{64}) \\*\' + $driverZipRegex + \'$\'\n',
+        text,
+    )
+
+    # 3) Normaliza todos os comandos frágeis de extração/move.
+    text = text.replace('$driverExtractDir = Join-Path "." ($driverZip -replace "\\.zip$", "")', '$driverExtractDir = Join-Path "." $driverExtractName')
+    text = text.replace('$driverExtractDir = Join-Path "." ($driverZip -replace "\\.zip$", "")', '$driverExtractDir = Join-Path "." $driverExtractName')
+    text = text.replace('$driverExtractDir = Join-Path "." ($driverZip -replace "\\.zip$", "")', '$driverExtractDir = Join-Path "." $driverExtractName')
+    text = re.sub(r'\$driverExtractDir\s*=\s*Join-Path\s+"\."\s+\(\$driverZip\s+-replace[^\n]*\)', '$driverExtractDir = Join-Path "." $driverExtractName', text)
+    text = _v29_replace_driver_extract_move_lines(text)
+
+    # 4) Corrige destinos antigos que sobram em qualquer linha do workflow.
+    text = text.replace('./rustdesk/drivers/FoxxDeskPrinterDriver', './foxxdesk/drivers/FoxxDeskPrinterDriver')
+    text = text.replace('./rustdesk/drivers/RustDeskPrinterDriver', './foxxdesk/drivers/FoxxDeskPrinterDriver')
+    text = text.replace('.\\rustdesk\\drivers\\FoxxDeskPrinterDriver', '.\\foxxdesk\\drivers\\FoxxDeskPrinterDriver')
+    text = text.replace('.\\rustdesk\\drivers\\RustDeskPrinterDriver', '.\\foxxdesk\\drivers\\FoxxDeskPrinterDriver')
+    text = text.replace('RustDeskPrinterDriver', 'FoxxDeskPrinterDriver')
+
+    # 5) Evita literal rustdesk_printer_driver após a V29, exceto montado por variável.
+    text = text.replace('rustdesk_printer_driver_v4-1.4.zip', '$driverZip')
+    text = text.replace('rustdesk_printer_driver_v4-1.4', '$driverExtractName')
+
+    return text
+
+
+def patch_text(rel: str, text: str, args: argparse.Namespace) -> str:  # type: ignore[override]
+    text = _PRE_V29_PATCH_TEXT(rel, text, args)
+    if rel == ".github/workflows/flutter-build.yml":
+        text = patch_flutter_build_printer_driver_v29(text)
+    return text
+
+
+def _workflow_has_powershell_driver_parser_risk_v29(target: Path) -> bool:
+    wf = target / ".github/workflows/flutter-build.yml"
+    if not wf.exists():
+        return False
+    try:
+        t = normalize_lf(wf.read_text(encoding="utf-8", errors="ignore"))
+    except OSError:
+        return False
+    risky = [
+        r'.\$($driverZip',
+        r'$driverZip -replace',
+        './rustdesk/drivers/',
+        '.\\rustdesk\\drivers\\',
+        'RustDeskPrinterDriver',
+        'rustdesk_printer_driver',
+    ]
+    t_check = t.replace('"Rust" + "Desk"', '').replace('"rust" + "desk"', '')
+    return any(fragment in t_check for fragment in risky)
+
+
+def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type: ignore[override]
+    _PRE_V29_VALIDATE_BUILD_SAFETY(target, report)
+    if _workflow_has_powershell_driver_parser_risk_v29(target):
+        report["pending"].append({
+            "file": ".github/workflows/flutter-build.yml",
+            "message": "V29: workflow ainda contém risco de ParserError PowerShell no driver (.\\$($driverZip...), $driverZip -replace, destino rustdesk/drivers ou literal antigo de driver)",
+        })
+    else:
+        # Remove pendências antigas/falsos positivos sobre driver do workflow se a checagem V29 passou.
+        report["pending"] = [
+            p for p in report["pending"]
+            if not (
+                p.get("file") == ".github/workflows/flutter-build.yml"
+                and (
+                    "RustDeskPrinterDriver" in str(p.get("message"))
+                    or "driver de impressora" in str(p.get("message"))
+                    or "ParserError PowerShell" in str(p.get("message"))
+                )
+            )
+        ]
+
+
+def setup_logging_v28(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:  # type: ignore[override]
+    """V29: mantém flags de logging da V28, mas usa rebrand_v29.log por padrão."""
+    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v29.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    level = logging.DEBUG if getattr(args, "verbose", False) else logging.INFO
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.setLevel(level)
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(level)
+    root_logger.addHandler(file_handler)
+    if not getattr(args, "quiet", False):
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        console_handler.setLevel(level)
+        root_logger.addHandler(console_handler)
+    report["log_file"] = str(log_path)
+    logging.info("FoxxDesk rebrand %s iniciado", SCRIPT_VERSION)
+    logging.info("Target: %s", target)
+    logging.info("Modo: %s | profile=%s | scan_all=%s", "apply" if args.apply else "dry-run", args.profile, args.scan_all)
+    logging.info("Icon assets: %s | source=%s", bool(getattr(args, "apply_icon_assets", False)), getattr(args, "icon_source", "res/icon.png"))
+
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V27 patch-only, englobando todas as correções anteriores e corrigindo a sintaxe dos helpers Python gerados.")
+    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V29 patch-only, englobando todas as correções anteriores e corrigindo o ParserError PowerShell do driver no workflow.")
     p.add_argument("--target", default="./", help="Pasta raiz do projeto alvo. Padrão: ./")
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="Mostra o que seria alterado sem salvar arquivos do projeto, exceto relatório.")
@@ -2860,6 +3193,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--remove-old-renamed", action="store_true", help="Depois de copiar arquivos renomeados, remove os antigos. Use só após conferir o dry-run.")
     p.add_argument("--refresh-hbb-common", action="store_true", help="Força baixar novamente libs/hbb_common antes de aplicar o brand. Por padrão, baixa só se estiver ausente/incompleto.")
     p.add_argument("--skip-hbb-common-download", action="store_true", help="Não baixa libs/hbb_common automaticamente antes do brand, mesmo se estiver ausente.")
+    p.add_argument("--apply-icon-assets", action="store_true", help="V29: gera/atualiza os assets de ícone usando scripts/apply_foxxdesk_icon.py. Sem esta flag, só cria/atualiza o script helper.")
+    p.add_argument("--icon-source", default="res/icon.png", help="Imagem fonte relativa ao projeto para gerar os ícones. Padrão: res/icon.png")
+    p.add_argument("--icon-ios-background", default="#FFFFFF", help="Fundo usado para achatar ícones iOS/RGB. Padrão: #FFFFFF")
+    p.add_argument("--icon-update-ios-contents", action="store_true", help="Também normaliza flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json")
+    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v29.log")
+    p.add_argument("--verbose", action="store_true", help="Ativa logging DEBUG no arquivo/console.")
+    p.add_argument("--quiet", action="store_true", help="Não imprime logs no console; mantém log em arquivo.")
     return p.parse_args()
 
 
@@ -2883,8 +3223,10 @@ def main() -> int:
 
     report: Dict[str, Any] = {
         "analyzed_files": [], "missing_files": [], "changed_files": [], "already_applied_files": [],
-        "ignored_files": [], "pending": [], "changes": [], "renamed_files": [], "backup_dir": "",
+        "ignored_files": [], "pending": [], "changes": [], "renamed_files": [], "backup_dir": "", "log_file": "",
     }
+
+    setup_logging_v28(target, args, report)
 
     backup_root: Optional[Path] = None
     if args.apply:
@@ -2894,10 +3236,15 @@ def main() -> int:
         report["backup_dir"] = str(backup_root)
 
     if not args.skip_hbb_common_download:
+        logging.info("Etapa: garantir libs/hbb_common antes do rebrand")
         ensure_hbb_common_before_branding(target, args, report)
+    else:
+        logging.info("Etapa: hbb_common pulado por --skip-hbb-common-download")
 
+    logging.info("Etapa: criar/atualizar helpers e workflow FoxxDesk")
     ensure_v25_generated_files(target, args, report, backup_root)
 
+    logging.info("Etapa: aplicar renomeações seguras e remover obsoletos")
     apply_file_renames(target, args, report, backup_root)
     cleanup_obsolete_after_rename_files(target, args, report, backup_root)
 
@@ -2910,11 +3257,17 @@ def main() -> int:
         # O apply_file_renames já copia o antigo para o novo quando necessário.
         candidates = sorted(set(SAFE_CORE_FILES) | set(FILE_RENAMES.values()))
 
+    logging.info("Etapa: processar %d arquivo(s) candidato(s)", len(candidates))
     for rel in candidates:
+        logging.debug("Processando arquivo: %s", rel)
         process_one_file(target, rel, args, report, backup_root)
 
+    logging.info("Etapa: reforçar helper bridge e permissões executáveis")
     ensure_generated_bridge_compat_helper(target, args, report, backup_root)
     ensure_executable_permissions(target, args, report, backup_root)
+
+    logging.info("Etapa: icon assets V29")
+    run_icon_assets_v28(target, args, report)
 
     if args.apply and args.remove_old_renamed:
         for src_rel, dst_rel in FILE_RENAMES.items():
@@ -2926,6 +3279,7 @@ def main() -> int:
                 src.unlink()
                 report["changes"].append({"file": src_rel, "line": 1, "status": "removido", "action": "remover arquivo antigo após renomeação", "message": f"substituído por {dst_rel}"})
 
+    logging.info("Etapa: validação final de segurança/build")
     validate_build_safety(target, report)
 
     report_md = build_report(report, args, target)
@@ -2935,8 +3289,10 @@ def main() -> int:
     changed = len(set(report["changed_files"]))
     pending = len(report["pending"])
     missing = len(set(report["missing_files"]))
+    logging.info("Resumo final: alterados=%d pendencias=%d nao_encontrados=%d relatorio=%s", changed, pending, missing, report_path)
     print(f"Script: {SCRIPT_VERSION}")
     print(f"Relatório gerado em: {report_path}")
+    print(f"Log detalhado em: {report.get('log_file')}")
     print(f"Modo: {'apply' if args.apply else 'dry-run'} | arquivos alterados: {changed} | pendências: {pending} | não encontrados: {missing}")
     if args.profile == "safe":
         print("AVISO: você usou --profile safe; ele altera só o núcleo crítico. Para todos os arquivos, rode sem --profile ou use --profile full.")

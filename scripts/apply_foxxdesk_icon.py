@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate all FoxxDesk/RustDesk app/logo image assets from a single source: res/icon.png.
+Generate all FoxxDesk app/logo image assets from a single source: res/icon.png.
 
 v3 scope:
 - Root res PNG/SVG/ICO assets.
@@ -64,7 +64,7 @@ ROOT_PNG_ASSETS = [
 SVG_ASSETS = [
     {"path": "res/FoxxDesk.svg", "width": 128, "height": 128, "viewBox": "0 0 96 95.999999"},
     {"path": "res/logo.svg", "width": 26, "height": 26, "viewBox": "0 0 96 95.999999"},
-    {"path": "res/rustdesk-banner.svg", "width": 114, "height": 26, "viewBox": "66.993 897.484 113.652 26"},
+    {"path": "res/foxxdesk-banner.svg", "width": 114, "height": 26, "viewBox": "66.993 897.484 113.652 26"},
     {"path": "res/scalable.svg", "width": 32, "height": 32, "viewBox": "66.993 897.484 32 32.000001"},
     {"path": "flutter/assets/icon.svg", "width": 150, "height": 150, "viewBox": "0 0 112.5 112.499997"},
 ]
