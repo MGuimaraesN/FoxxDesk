@@ -5,7 +5,7 @@ import 'package:flutter_hbb/common.dart';
 
 enum SystemWindowTheme { light, dark }
 
-/// The platform channel for FoxxDesk.
+/// The platform channel for RustDesk.
 class RdPlatformChannel {
   RdPlatformChannel._();
 
@@ -14,7 +14,7 @@ class RdPlatformChannel {
   static RdPlatformChannel get instance => _windowUtil;
 
   final MethodChannel _hostMethodChannel =
-      MethodChannel("org.foxxdesk.foxxdesk/host");
+      MethodChannel("org.rustdesk.rustdesk/host");
 
   /// Bump the position of the mouse cursor, if applicable
   Future<bool> bumpMouse({required int dx, required int dy}) async {
