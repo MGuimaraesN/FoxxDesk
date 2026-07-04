@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-apply_foxxdesk_rebrand_all_files_no_zip_v26.py
+apply_foxxdesk_rebrand_all_files_no_zip_v27.py
 
 Versão all-files patch-only sem ZIP/payload/manifesto e sem espelhar arquivos inteiros.
 
@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCRIPT_VERSION = "v26-complete-driver-workflow-cleanup-2026-07-04"
+SCRIPT_VERSION = "v27-fix-generated-helper-syntax-2026-07-04"
 APP_DISPLAY_NAME = "FoxxDesk"
 APP_SLUG = "foxxdesk"
 APP_SLUG_UPPER = "FOXXDESK"
@@ -427,47 +427,7 @@ FILE_RENAMES: Dict[str, str] = {
     "res/msi/Package/Components/RustDesk.wxs": "res/msi/Package/Components/FoxxDesk.wxs",
 }
 
-BRIDGE_COMPAT_SCRIPT = r"""#!/usr/bin/env python3
-""\"Keep old Dart API name RustdeskImpl after FoxxDesk Cargo package rename.
-
-flutter_rust_bridge derives the generated Dart implementation class from the
-Cargo package name. After package name `rustdesk` -> `foxxdesk`, the generated
-class may become `FoxxdeskImpl`, but the Flutter app still imports/uses the
-stable internal API name `RustdeskImpl`.
-
-Do not rename all app code blindly. Add a Dart typedef alias instead.
-""\"
-from __future__ import annotations
-
-import re
-from pathlib import Path
-
-p = Path("flutter/lib/generated_bridge.dart")
-if not p.exists():
-    raise SystemExit(f"Missing generated bridge: {p}")
-
-s = p.read_text(encoding="utf-8")
-
-if "class RustdeskImpl" in s or "typedef RustdeskImpl" in s:
-    print("generated_bridge.dart already exposes RustdeskImpl")
-    raise SystemExit(0)
-
-classes = re.findall(r"class\s+([A-Za-z_][A-Za-z0-9_]*Impl)\b", s)
-preferred = [c for c in classes if "foxx" in c.lower() or "desk" in c.lower()]
-impl = preferred[0] if preferred else (classes[0] if classes else None)
-
-if not impl:
-    raise SystemExit("Could not find generated bridge implementation class ending with Impl")
-
-alias = f""\"
-
-// FoxxDesk compatibility alias.
-// Keep the Flutter source compatible with the original FoxxDesk internal FFI name.
-typedef RustdeskImpl = {impl};
-""\"
-p.write_text(s.rstrip() + alias + "\n", encoding="utf-8")
-print(f"Added typedef RustdeskImpl = {impl};")
-"""
+BRIDGE_COMPAT_SCRIPT = '#!/usr/bin/env python3\n"""Keep old Dart API name RustdeskImpl after FoxxDesk Cargo package rename.\n\nflutter_rust_bridge derives the generated Dart implementation class from the\nCargo package name. After package name `rustdesk` -> `foxxdesk`, the generated\nclass may become `FoxxdeskImpl`, but the Flutter app still imports/uses the\nstable internal API name `RustdeskImpl`.\n\nDo not rename all app code blindly. Add a Dart typedef alias instead.\n"""\nfrom __future__ import annotations\n\nimport re\nfrom pathlib import Path\n\np = Path("flutter/lib/generated_bridge.dart")\nif not p.exists():\n    raise SystemExit(f"Missing generated bridge: {p}")\n\ns = p.read_text(encoding="utf-8")\n\nif "class RustdeskImpl" in s or "typedef RustdeskImpl" in s:\n    print("generated_bridge.dart already exposes RustdeskImpl")\n    raise SystemExit(0)\n\nclasses = re.findall(r"class\\s+([A-Za-z_][A-Za-z0-9_]*Impl)\\b", s)\npreferred = [c for c in classes if "foxx" in c.lower() or "desk" in c.lower()]\nimpl = preferred[0] if preferred else (classes[0] if classes else None)\n\nif not impl:\n    raise SystemExit("Could not find generated bridge implementation class ending with Impl")\n\nalias = f"""\n\n// FoxxDesk compatibility alias.\n// Keep the Flutter source compatible with the original FoxxDesk internal FFI name.\ntypedef RustdeskImpl = {impl};\n"""\np.write_text(s.rstrip() + alias + "\\n", encoding="utf-8")\nprint(f"Added typedef RustdeskImpl = {impl};")\n'
 
 FOXXDESK_BUILD_WORKFLOW = r"""name: FoxxDesk Build
 
@@ -499,218 +459,7 @@ jobs:
       upload-tag: ${{ inputs.upload_tag }}
 """
 
-WINDOWS_FLUTTER_BUILD_FIX_SCRIPT = r"""#!/usr/bin/env python3
-""\"
-Fixes the FoxxDesk Windows Flutter build after the FoxxDesk -> FoxxDesk rebrand.
-Run from the repository root:
-
-  python scripts/fix_foxxdesk_windows_flutter_build.py
-
-It patches:
-- flutter-rust-bridge generated class compatibility (FoxxdeskImpl -> RustdeskImpl alias)
-- GitHub Actions bridge workflow to apply that compatibility after generation
-- a few Dart null-safety/type issues reported by the Windows build
-""\"
-from __future__ import annotations
-
-import re
-from pathlib import Path
-
-ROOT = Path.cwd()
-
-
-def read(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
-
-
-def write(path: str, text: str) -> None:
-    p = ROOT / path
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(text, encoding="utf-8", newline="")
-
-
-def replace_once(path: str, old: str, new: str) -> None:
-    text = read(path)
-    if new in text:
-        print(f"OK already patched: {path}")
-        return
-    if old not in text:
-        raise SystemExit(f"Pattern not found in {path}: {old!r}")
-    write(path, text.replace(old, new, 1))
-    print(f"PATCHED: {path}")
-
-
-# 1) Add a post-generation bridge compatibility fixer.
-bridge_compat = r'''#!/usr/bin/env python3
-""\"Keep old Dart API name RustdeskImpl after FoxxDesk Cargo package rename.
-
-flutter_rust_bridge derives the generated Dart implementation class from the
-Cargo package name. After package name `foxxdesk` -> `foxxdesk`, the generated
-class may become `FoxxdeskImpl`, but the Flutter app still imports/uses the
-stable internal API name `RustdeskImpl`.
-
-Do not rename all app code blindly. Add a Dart typedef alias instead.
-""\"
-from __future__ import annotations
-
-import re
-from pathlib import Path
-
-p = Path("flutter/lib/generated_bridge.dart")
-if not p.exists():
-    raise SystemExit(f"Missing generated bridge: {p}")
-
-s = p.read_text(encoding="utf-8")
-
-if "class RustdeskImpl" in s or "typedef RustdeskImpl" in s:
-    print("generated_bridge.dart already exposes RustdeskImpl")
-    raise SystemExit(0)
-
-classes = re.findall(r"class\s+([A-Za-z_][A-Za-z0-9_]*Impl)\b", s)
-preferred = [c for c in classes if "foxx" in c.lower() or "desk" in c.lower()]
-impl = preferred[0] if preferred else (classes[0] if classes else None)
-
-if not impl:
-    raise SystemExit("Could not find generated bridge implementation class ending with Impl")
-
-alias = f""\"
-
-// FoxxDesk compatibility alias.
-// Keep the Flutter source compatible with the original FoxxDesk internal FFI name.
-typedef RustdeskImpl = {impl};
-""\"
-p.write_text(s.rstrip() + alias + "\n", encoding="utf-8")
-print(f"Added typedef RustdeskImpl = {impl};")
-'''
-write("scripts/fix_generated_bridge_compat.py", bridge_compat)
-print("CREATED/UPDATED: scripts/fix_generated_bridge_compat.py")
-
-# 2) Make the reusable bridge workflow patch generated_bridge.dart before upload.
-bridge_yml = ".github/workflows/bridge.yml"
-text = read(bridge_yml)
-step = ""\"
-      - name: Patch FoxxDesk bridge compatibility
-        shell: bash
-        run: python3 scripts/fix_generated_bridge_compat.py
-""\"
-if "Patch FoxxDesk bridge compatibility" not in text:
-    marker = ""\"      - name: Upload Artifact
-        uses: actions/upload-artifact""\"
-    if marker not in text:
-        raise SystemExit("Could not find Upload Artifact step in .github/workflows/bridge.yml")
-    text = text.replace(marker, step + "\n" + marker, 1)
-    write(bridge_yml, text)
-    print(f"PATCHED: {bridge_yml}")
-else:
-    print(f"OK already patched: {bridge_yml}")
-
-# 3) Make local build.py generation apply the same alias whenever it touches generated_bridge.dart.
-build_py = "build.py"
-text = read(build_py)
-old = '''def ffi_bindgen_function_refactor():
-    # workaround ffigen
-    system2(
-        'sed -i "s/ffi.NativeFunction<ffi.Bool Function(DartPort/ffi.NativeFunction<ffi.Uint8 Function(DartPort/g" flutter/lib/generated_bridge.dart')
-'''
-new = '''def ffi_bindgen_function_refactor():
-    # workaround ffigen
-    system2(
-        'sed -i "s/ffi.NativeFunction<ffi.Bool Function(DartPort/ffi.NativeFunction<ffi.Uint8 Function(DartPort/g" flutter/lib/generated_bridge.dart')
-    if os.path.exists("scripts/fix_generated_bridge_compat.py"):
-        system2("python3 scripts/fix_generated_bridge_compat.py")
-'''
-if new not in text:
-    if old not in text:
-        print("WARN: build.py ffi_bindgen_function_refactor block not found; skipped")
-    else:
-        write(build_py, text.replace(old, new, 1))
-        print(f"PATCHED: {build_py}")
-else:
-    print(f"OK already patched: {build_py}")
-
-# 4) Dart null-safety/type patches reported by the Windows Flutter build.
-# Patch every LastWindowPosition.loadFromString(pos) occurrence; there are multiple helpers.
-common_path = "flutter/lib/common.dart"
-common_text = read(common_path)
-if "LastWindowPosition.loadFromString(pos);" in common_text:
-    write(common_path, common_text.replace(
-        "LastWindowPosition.loadFromString(pos);",
-        "LastWindowPosition.loadFromString(pos ?? '');",
-    ))
-    print(f"PATCHED: {common_path} (all LastWindowPosition nullable pos calls)")
-else:
-    print(f"OK already patched: {common_path} (LastWindowPosition)")
-replace_once(
-    "flutter/lib/common/widgets/dialog.dart",
-    "controller.text = osPassword;",
-    "controller.text = osPassword ?? '';",
-)
-replace_once(
-    "flutter/lib/desktop/widgets/remote_toolbar.dart",
-    "final results = await Future.wait([",
-    "final results = await Future.wait<bool?>([",
-)
-
-# Force String generic on _Radio calls in desktop settings to avoid Dart inferring dynamic.
-dsp = "flutter/lib/desktop/pages/desktop_setting_page.dart"
-text = read(dsp)
-if "_Radio(context" in text:
-    text = text.replace("_Radio(context", "_Radio<String>(context")
-    write(dsp, text)
-    print(f"PATCHED: {dsp} (_Radio<String>)")
-else:
-    print(f"OK already patched: {dsp} (_Radio<String>)")
-
-# Null bool fixes in toolbar around follow/show remote cursor.
-toolbar = "flutter/lib/common/widgets/toolbar.dart"
-text = read(toolbar)
-repls = {
-    ""\"                state.value = bind.sessionGetToggleOptionSync(
-                    sessionId: sessionId, arg: option);""\": ""\"                state.value = bind.sessionGetToggleOptionSync(
-                        sessionId: sessionId, arg: option) ??
-                    false;""\",
-    ""\"    final value =
-        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);""\": ""\"    final value =
-            bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option) ??
-        false;""\",
-    ""\"    final showCursorEnabled = bind.sessionGetToggleOptionSync(
-        sessionId: sessionId, arg: showCursorOption);""\": ""\"    final showCursorEnabled =
-        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: showCursorOption) ??
-            false;""\",
-    ""\"      showCursorState.value = bind.sessionGetToggleOptionSync(
-          sessionId: sessionId, arg: showCursorOption);""\": ""\"      showCursorState.value = bind.sessionGetToggleOptionSync(
-              sessionId: sessionId, arg: showCursorOption) ??
-          false;""\",
-    ""\"          value = bind.sessionGetToggleOptionSync(
-              sessionId: sessionId, arg: option);""\": ""\"          value = bind.sessionGetToggleOptionSync(
-                  sessionId: sessionId, arg: option) ??
-              false;""\",
-    ""\"            showCursorState.value = bind.sessionGetToggleOptionSync(
-                sessionId: sessionId, arg: showCursorOption);""\": ""\"            showCursorState.value = bind.sessionGetToggleOptionSync(
-                    sessionId: sessionId, arg: showCursorOption) ??
-                false;""\",
-    ""\"        peerState.value =
-            bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);""\": ""\"        peerState.value =
-                bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option) ??
-            false;""\",
-}
-changed = False
-for old, new in repls.items():
-    if old in text and new not in text:
-        text = text.replace(old, new, 1)
-        changed = True
-if changed:
-    write(toolbar, text)
-    print(f"PATCHED: {toolbar}")
-else:
-    print(f"OK/no matching toolbar patches needed: {toolbar}")
-
-print("\nDone. Now run:")
-print("  flutter clean")
-print("  flutter pub get")
-print("  flutter build windows --release")
-print("or push and rerun GitHub Actions.")
-"""
+WINDOWS_FLUTTER_BUILD_FIX_SCRIPT = '#!/usr/bin/env python3\n"""\nFixes the FoxxDesk Windows Flutter build after the RustDesk -> FoxxDesk rebrand.\nRun from the repository root:\n\n  python scripts/fix_foxxdesk_windows_flutter_build.py\n\nIt patches:\n- flutter-rust-bridge generated class compatibility (FoxxdeskImpl -> RustdeskImpl alias)\n- GitHub Actions bridge workflow to apply that compatibility after generation\n- a few Dart null-safety/type issues reported by the Windows build\n"""\nfrom __future__ import annotations\n\nimport re\nfrom pathlib import Path\n\nROOT = Path.cwd()\n\n\ndef read(path: str) -> str:\n    return (ROOT / path).read_text(encoding="utf-8")\n\n\ndef write(path: str, text: str) -> None:\n    p = ROOT / path\n    p.parent.mkdir(parents=True, exist_ok=True)\n    p.write_text(text, encoding="utf-8", newline="")\n\n\ndef replace_once(path: str, old: str, new: str) -> None:\n    text = read(path)\n    if new in text:\n        print(f"OK already patched: {path}")\n        return\n    if old not in text:\n        raise SystemExit(f"Pattern not found in {path}: {old!r}")\n    write(path, text.replace(old, new, 1))\n    print(f"PATCHED: {path}")\n\n\n# 1) Add a post-generation bridge compatibility fixer.\nbridge_compat = r\'\'\'#!/usr/bin/env python3\n"""Keep old Dart API name RustdeskImpl after FoxxDesk Cargo package rename.\n\nflutter_rust_bridge derives the generated Dart implementation class from the\nCargo package name. After package name `rustdesk` -> `foxxdesk`, the generated\nclass may become `FoxxdeskImpl`, but the Flutter app still imports/uses the\nstable internal API name `RustdeskImpl`.\n\nDo not rename all app code blindly. Add a Dart typedef alias instead.\n"""\nfrom __future__ import annotations\n\nimport re\nfrom pathlib import Path\n\np = Path("flutter/lib/generated_bridge.dart")\nif not p.exists():\n    raise SystemExit(f"Missing generated bridge: {p}")\n\ns = p.read_text(encoding="utf-8")\n\nif "class RustdeskImpl" in s or "typedef RustdeskImpl" in s:\n    print("generated_bridge.dart already exposes RustdeskImpl")\n    raise SystemExit(0)\n\nclasses = re.findall(r"class\\s+([A-Za-z_][A-Za-z0-9_]*Impl)\\b", s)\npreferred = [c for c in classes if "foxx" in c.lower() or "desk" in c.lower()]\nimpl = preferred[0] if preferred else (classes[0] if classes else None)\n\nif not impl:\n    raise SystemExit("Could not find generated bridge implementation class ending with Impl")\n\nalias = f"""\n\n// FoxxDesk compatibility alias.\n// Keep the Flutter source compatible with the original FoxxDesk internal FFI name.\ntypedef RustdeskImpl = {impl};\n"""\np.write_text(s.rstrip() + alias + "\\n", encoding="utf-8")\nprint(f"Added typedef RustdeskImpl = {impl};")\n\'\'\'\nwrite("scripts/fix_generated_bridge_compat.py", bridge_compat)\nprint("CREATED/UPDATED: scripts/fix_generated_bridge_compat.py")\n\n# 2) Make the reusable bridge workflow patch generated_bridge.dart before upload.\nbridge_yml = ".github/workflows/bridge.yml"\ntext = read(bridge_yml)\nstep = """\n      - name: Patch FoxxDesk bridge compatibility\n        shell: bash\n        run: python3 scripts/fix_generated_bridge_compat.py\n"""\nif "Patch FoxxDesk bridge compatibility" not in text:\n    marker = """      - name: Upload Artifact\n        uses: actions/upload-artifact"""\n    if marker not in text:\n        raise SystemExit("Could not find Upload Artifact step in .github/workflows/bridge.yml")\n    text = text.replace(marker, step + "\\n" + marker, 1)\n    write(bridge_yml, text)\n    print(f"PATCHED: {bridge_yml}")\nelse:\n    print(f"OK already patched: {bridge_yml}")\n\n# 3) Make local build.py generation apply the same alias whenever it touches generated_bridge.dart.\nbuild_py = "build.py"\ntext = read(build_py)\nold = \'\'\'def ffi_bindgen_function_refactor():\n    # workaround ffigen\n    system2(\n        \'sed -i "s/ffi.NativeFunction<ffi.Bool Function(DartPort/ffi.NativeFunction<ffi.Uint8 Function(DartPort/g" flutter/lib/generated_bridge.dart\')\n\'\'\'\nnew = \'\'\'def ffi_bindgen_function_refactor():\n    # workaround ffigen\n    system2(\n        \'sed -i "s/ffi.NativeFunction<ffi.Bool Function(DartPort/ffi.NativeFunction<ffi.Uint8 Function(DartPort/g" flutter/lib/generated_bridge.dart\')\n    if os.path.exists("scripts/fix_generated_bridge_compat.py"):\n        system2("python3 scripts/fix_generated_bridge_compat.py")\n\'\'\'\nif new not in text:\n    if old not in text:\n        print("WARN: build.py ffi_bindgen_function_refactor block not found; skipped")\n    else:\n        write(build_py, text.replace(old, new, 1))\n        print(f"PATCHED: {build_py}")\nelse:\n    print(f"OK already patched: {build_py}")\n\n# 4) Dart null-safety/type patches reported by the Windows Flutter build.\n# Patch every LastWindowPosition.loadFromString(pos) occurrence; there are multiple helpers.\ncommon_path = "flutter/lib/common.dart"\ncommon_text = read(common_path)\nif "LastWindowPosition.loadFromString(pos);" in common_text:\n    write(common_path, common_text.replace(\n        "LastWindowPosition.loadFromString(pos);",\n        "LastWindowPosition.loadFromString(pos ?? \'\');",\n    ))\n    print(f"PATCHED: {common_path} (all LastWindowPosition nullable pos calls)")\nelse:\n    print(f"OK already patched: {common_path} (LastWindowPosition)")\nreplace_once(\n    "flutter/lib/common/widgets/dialog.dart",\n    "controller.text = osPassword;",\n    "controller.text = osPassword ?? \'\';",\n)\nreplace_once(\n    "flutter/lib/desktop/widgets/remote_toolbar.dart",\n    "final results = await Future.wait([",\n    "final results = await Future.wait<bool?>([",\n)\n\n# Force String generic on _Radio calls in desktop settings to avoid Dart inferring dynamic.\ndsp = "flutter/lib/desktop/pages/desktop_setting_page.dart"\ntext = read(dsp)\nif "_Radio(context" in text:\n    text = text.replace("_Radio(context", "_Radio<String>(context")\n    write(dsp, text)\n    print(f"PATCHED: {dsp} (_Radio<String>)")\nelse:\n    print(f"OK already patched: {dsp} (_Radio<String>)")\n\n# Null bool fixes in toolbar around follow/show remote cursor.\ntoolbar = "flutter/lib/common/widgets/toolbar.dart"\ntext = read(toolbar)\nrepls = {\n    """                state.value = bind.sessionGetToggleOptionSync(\n                    sessionId: sessionId, arg: option);""": """                state.value = bind.sessionGetToggleOptionSync(\n                        sessionId: sessionId, arg: option) ??\n                    false;""",\n    """    final value =\n        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);""": """    final value =\n            bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option) ??\n        false;""",\n    """    final showCursorEnabled = bind.sessionGetToggleOptionSync(\n        sessionId: sessionId, arg: showCursorOption);""": """    final showCursorEnabled =\n        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: showCursorOption) ??\n            false;""",\n    """      showCursorState.value = bind.sessionGetToggleOptionSync(\n          sessionId: sessionId, arg: showCursorOption);""": """      showCursorState.value = bind.sessionGetToggleOptionSync(\n              sessionId: sessionId, arg: showCursorOption) ??\n          false;""",\n    """          value = bind.sessionGetToggleOptionSync(\n              sessionId: sessionId, arg: option);""": """          value = bind.sessionGetToggleOptionSync(\n                  sessionId: sessionId, arg: option) ??\n              false;""",\n    """            showCursorState.value = bind.sessionGetToggleOptionSync(\n                sessionId: sessionId, arg: showCursorOption);""": """            showCursorState.value = bind.sessionGetToggleOptionSync(\n                    sessionId: sessionId, arg: showCursorOption) ??\n                false;""",\n    """        peerState.value =\n            bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);""": """        peerState.value =\n                bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option) ??\n            false;""",\n}\nchanged = False\nfor old, new in repls.items():\n    if old in text and new not in text:\n        text = text.replace(old, new, 1)\n        changed = True\nif changed:\n    write(toolbar, text)\n    print(f"PATCHED: {toolbar}")\nelse:\n    print(f"OK/no matching toolbar patches needed: {toolbar}")\n\nprint("\\nDone. Now run:")\nprint("  flutter clean")\nprint("  flutter pub get")\nprint("  flutter build windows --release")\nprint("or push and rerun GitHub Actions.")\n'
 
 # Nomes/URLs que devem continuar como upstream ou API interna.
 PROTECT_PATTERNS: Sequence[str] = (
@@ -2000,7 +1749,7 @@ def build_report(report: Dict[str, Any], args: argparse.Namespace, target: Path)
         f"- Data/hora: `{now}`",
         f"- Modo: `{'apply' if args.apply else 'dry-run'}`",
         f"- Projeto alvo: `{target}`",
-        "- Script: `apply_foxxdesk_rebrand_all_files_no_zip_v26.py`",
+        "- Script: `apply_foxxdesk_rebrand_all_files_no_zip_v27.py`",
         f"- Versão do script: `{SCRIPT_VERSION}`",
         "- Payload/ZIP/manifesto externo: `não`",
         "- Espelhamento/substituição de arquivo inteiro por referência antiga: `não`",
@@ -3071,8 +2820,30 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
             )
         ]
 
+
+# ---------------------------------------------------------------------------
+# V27: corrige geração dos helpers Python. A V26 gerava docstring como ""\",
+# causando SyntaxError em scripts/fix_generated_bridge_compat.py no GitHub Actions.
+# ---------------------------------------------------------------------------
+def validate_generated_helper_syntax_v27(target: Path, report: Dict[str, Any]) -> None:
+    """Compila os helpers gerados para pegar erro de aspas/docstring antes do CI."""
+    for rel in ["scripts/fix_generated_bridge_compat.py", "scripts/fix_foxxdesk_windows_flutter_build.py"]:
+        p = target / rel
+        if not p.exists():
+            continue
+        try:
+            subprocess.run([sys.executable, "-m", "py_compile", str(p)], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        except subprocess.CalledProcessError as exc:
+            report["pending"].append({"file": rel, "message": f"helper Python inválido após geração: {exc.stderr.strip() or exc.stdout.strip()}"})
+
+_PRE_V27_MAIN_VALIDATE = validate_build_safety
+
+def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type: ignore[override]
+    _PRE_V27_MAIN_VALIDATE(target, report)
+    validate_generated_helper_syntax_v27(target, report)
+
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V26 patch-only, englobando todas as correções anteriores e limpando definitivamente o driver no flutter-build.yml sem ZIP/payload/manifesto.")
+    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V27 patch-only, englobando todas as correções anteriores e corrigindo a sintaxe dos helpers Python gerados.")
     p.add_argument("--target", default="./", help="Pasta raiz do projeto alvo. Padrão: ./")
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="Mostra o que seria alterado sem salvar arquivos do projeto, exceto relatório.")
