@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=FoxxDesk
+NoDisplay=true
+MimeType=x-scheme-handler/foxxdesk;
+TryExec=foxxdesk
+Exec=foxxdesk %u
+Icon=foxxdesk
+Terminal=false
+Type=Application
+StartupNotify=false
+StartupWMClass=foxxdesk
