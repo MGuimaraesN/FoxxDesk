@@ -7269,7 +7269,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "foxxdesk"
+name = "rustdesk"
 version = "1.4.8"
 dependencies = [
  "android-wakelock",
@@ -7384,7 +7384,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "foxxdesk-portable-packer"
+name = "rustdesk-portable-packer"
 version = "1.4.8"
 dependencies = [
  "brotli",
