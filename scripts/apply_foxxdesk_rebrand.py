@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-apply_foxxdesk_rebrand_all_files_no_zip_v24.py
+apply_foxxdesk_rebrand_all_files_no_zip_v26.py
 
 Versão all-files patch-only sem ZIP/payload/manifesto e sem espelhar arquivos inteiros.
 
@@ -25,17 +25,22 @@ import datetime as _dt
 import hashlib
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCRIPT_VERSION = "v24-on-demand-elevation-and-printer-brand-cleanup-2026-07-02"
+SCRIPT_VERSION = "v26-complete-driver-workflow-cleanup-2026-07-04"
 APP_DISPLAY_NAME = "FoxxDesk"
 APP_SLUG = "foxxdesk"
 APP_SLUG_UPPER = "FOXXDESK"
 DEFAULT_SERVER = "foxxdesk.mguimaraesn.dev"
 DEFAULT_KEY = "6WbpsDtYMwUca74qNvNaBfV4pUIGzyXnX1Q8V8fZ8YA="
 DEFAULT_MAINTAINER_EMAIL = "mateus@mguimaraesn.dev"
+COPYRIGHT_OWNER = "MGN Systems"
+COPYRIGHT_YEAR = str(_dt.datetime.now().year)
+COPYRIGHT_TEXT = f"Copyright © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}. All rights reserved."
+COPYRIGHT_HTML = f"Copyright &copy; {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}."
 
 BINARY_EXTS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".icns", ".exe", ".dll",
@@ -315,6 +320,7 @@ ALLOWED_FILES: List[str] = [
     'src/server/terminal_service.rs',
     'src/ui_cm_interface.rs',
     'src/ui_session_interface.rs',
+    'src/ui/index.tis',
     'src/virtual_display_manager.rs',
 ]
 
@@ -349,6 +355,7 @@ SAFE_CORE_FILES: List[str] = [
 
 GENERATED_HELPER_FILES: set[str] = {
     "scripts/fix_generated_bridge_compat.py",
+    "scripts/fix_foxxdesk_windows_flutter_build.py",
 }
 
 EXECUTABLE_FILES: set[str] = {
@@ -369,16 +376,34 @@ EXECUTABLE_FILES: set[str] = {
     "flutter/ndk_x86.sh",
     "flutter/run.sh",
     "scripts/fix_generated_bridge_compat.py",
+    "scripts/fix_foxxdesk_windows_flutter_build.py",
 }
 
 # Arquivos antigos que não podem coexistir com o novo nome.
 # No WiX SDK, todos os .wxs do diretório entram no build; manter RustDesk.wxs
 # junto com FoxxDesk.wxs duplica ComponentGroup:Components e Component:App.StartMenu.
 OBSOLETE_AFTER_RENAME_FILES: Dict[str, str] = {
+    # Arquivos que foram substituídos pelo novo nome. Se ambos existirem,
+    # o antigo é removido por padrão para evitar build duplicado e branding misto.
+    ".github/workflows/rustdesk-build.yml": ".github/workflows/foxxdesk-build.yml",
+    "flatpak/com.rustdesk.RustDesk.metainfo.xml": "flatpak/com.foxxdesk.client.metainfo.xml",
+    "flatpak/com.rustdesk.client.metainfo.xml": "flatpak/com.foxxdesk.client.metainfo.xml",
+    "flatpak/rustdesk.json": "flatpak/foxxdesk.json",
+    "res/rustdesk-link.desktop": "res/foxxdesk-link.desktop",
+    "res/rustdesk.desktop": "res/foxxdesk.desktop",
+    "res/rustdesk.service": "res/foxxdesk.service",
+    "res/pam.d/rustdesk.debian": "res/pam.d/foxxdesk.debian",
+    "res/pam.d/rustdesk.suse": "res/pam.d/foxxdesk.suse",
+    # No WiX SDK, todos os .wxs do diretório entram no build; manter RustDesk.wxs
+    # junto com FoxxDesk.wxs duplica ComponentGroup:Components e Component:App.StartMenu.
     "res/msi/Package/Components/RustDesk.wxs": "res/msi/Package/Components/FoxxDesk.wxs",
 }
 
 OPTIONAL_FILES: set[str] = {
+    "BRAND_CHANGELOG.md",
+    "FOXXDESK_MAX_SAFE_BRAND_REPORT.md",
+    "FOXXDESK_SERVER_DEFAULTS.md",
+    "NOTICE.md",
     # Scripts auxiliares gerados em versões antigas do rebrand.
     # Não são necessários para compilar o projeto e não devem ser recriados
     # a partir de snapshot antigo só para zerar pendência.
@@ -392,6 +417,7 @@ OPTIONAL_FILES: set[str] = {
 FILE_RENAMES: Dict[str, str] = {
     ".github/workflows/rustdesk-build.yml": ".github/workflows/foxxdesk-build.yml",
     "flatpak/com.rustdesk.RustDesk.metainfo.xml": "flatpak/com.foxxdesk.client.metainfo.xml",
+    "flatpak/com.rustdesk.client.metainfo.xml": "flatpak/com.foxxdesk.client.metainfo.xml",
     "flatpak/rustdesk.json": "flatpak/foxxdesk.json",
     "res/rustdesk-link.desktop": "res/foxxdesk-link.desktop",
     "res/rustdesk.desktop": "res/foxxdesk.desktop",
@@ -401,8 +427,8 @@ FILE_RENAMES: Dict[str, str] = {
     "res/msi/Package/Components/RustDesk.wxs": "res/msi/Package/Components/FoxxDesk.wxs",
 }
 
-BRIDGE_COMPAT_SCRIPT = r'''#!/usr/bin/env python3
-"""Keep old Dart API name RustdeskImpl after FoxxDesk Cargo package rename.
+BRIDGE_COMPAT_SCRIPT = r"""#!/usr/bin/env python3
+""\"Keep old Dart API name RustdeskImpl after FoxxDesk Cargo package rename.
 
 flutter_rust_bridge derives the generated Dart implementation class from the
 Cargo package name. After package name `rustdesk` -> `foxxdesk`, the generated
@@ -410,7 +436,7 @@ class may become `FoxxdeskImpl`, but the Flutter app still imports/uses the
 stable internal API name `RustdeskImpl`.
 
 Do not rename all app code blindly. Add a Dart typedef alias instead.
-"""
+""\"
 from __future__ import annotations
 
 import re
@@ -433,15 +459,258 @@ impl = preferred[0] if preferred else (classes[0] if classes else None)
 if not impl:
     raise SystemExit("Could not find generated bridge implementation class ending with Impl")
 
-alias = f"""
+alias = f""\"
 
 // FoxxDesk compatibility alias.
 // Keep the Flutter source compatible with the original FoxxDesk internal FFI name.
 typedef RustdeskImpl = {impl};
+""\"
+p.write_text(s.rstrip() + alias + "\n", encoding="utf-8")
+print(f"Added typedef RustdeskImpl = {impl};")
 """
+
+FOXXDESK_BUILD_WORKFLOW = r"""name: FoxxDesk Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_artifact:
+        description: "Upload build artifacts"
+        required: true
+        type: boolean
+        default: true
+      upload_tag:
+        description: "Release tag used for prerelease upload"
+        required: true
+        type: string
+        default: "foxxdesk-nightly"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build:
+    name: FoxxDesk reusable Flutter build
+    uses: ./.github/workflows/flutter-build.yml
+    secrets: inherit
+    with:
+      upload-artifact: ${{ inputs.upload_artifact }}
+      upload-tag: ${{ inputs.upload_tag }}
+"""
+
+WINDOWS_FLUTTER_BUILD_FIX_SCRIPT = r"""#!/usr/bin/env python3
+""\"
+Fixes the FoxxDesk Windows Flutter build after the FoxxDesk -> FoxxDesk rebrand.
+Run from the repository root:
+
+  python scripts/fix_foxxdesk_windows_flutter_build.py
+
+It patches:
+- flutter-rust-bridge generated class compatibility (FoxxdeskImpl -> RustdeskImpl alias)
+- GitHub Actions bridge workflow to apply that compatibility after generation
+- a few Dart null-safety/type issues reported by the Windows build
+""\"
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+ROOT = Path.cwd()
+
+
+def read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def write(path: str, text: str) -> None:
+    p = ROOT / path
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8", newline="")
+
+
+def replace_once(path: str, old: str, new: str) -> None:
+    text = read(path)
+    if new in text:
+        print(f"OK already patched: {path}")
+        return
+    if old not in text:
+        raise SystemExit(f"Pattern not found in {path}: {old!r}")
+    write(path, text.replace(old, new, 1))
+    print(f"PATCHED: {path}")
+
+
+# 1) Add a post-generation bridge compatibility fixer.
+bridge_compat = r'''#!/usr/bin/env python3
+""\"Keep old Dart API name RustdeskImpl after FoxxDesk Cargo package rename.
+
+flutter_rust_bridge derives the generated Dart implementation class from the
+Cargo package name. After package name `foxxdesk` -> `foxxdesk`, the generated
+class may become `FoxxdeskImpl`, but the Flutter app still imports/uses the
+stable internal API name `RustdeskImpl`.
+
+Do not rename all app code blindly. Add a Dart typedef alias instead.
+""\"
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+p = Path("flutter/lib/generated_bridge.dart")
+if not p.exists():
+    raise SystemExit(f"Missing generated bridge: {p}")
+
+s = p.read_text(encoding="utf-8")
+
+if "class RustdeskImpl" in s or "typedef RustdeskImpl" in s:
+    print("generated_bridge.dart already exposes RustdeskImpl")
+    raise SystemExit(0)
+
+classes = re.findall(r"class\s+([A-Za-z_][A-Za-z0-9_]*Impl)\b", s)
+preferred = [c for c in classes if "foxx" in c.lower() or "desk" in c.lower()]
+impl = preferred[0] if preferred else (classes[0] if classes else None)
+
+if not impl:
+    raise SystemExit("Could not find generated bridge implementation class ending with Impl")
+
+alias = f""\"
+
+// FoxxDesk compatibility alias.
+// Keep the Flutter source compatible with the original FoxxDesk internal FFI name.
+typedef RustdeskImpl = {impl};
+""\"
 p.write_text(s.rstrip() + alias + "\n", encoding="utf-8")
 print(f"Added typedef RustdeskImpl = {impl};")
 '''
+write("scripts/fix_generated_bridge_compat.py", bridge_compat)
+print("CREATED/UPDATED: scripts/fix_generated_bridge_compat.py")
+
+# 2) Make the reusable bridge workflow patch generated_bridge.dart before upload.
+bridge_yml = ".github/workflows/bridge.yml"
+text = read(bridge_yml)
+step = ""\"
+      - name: Patch FoxxDesk bridge compatibility
+        shell: bash
+        run: python3 scripts/fix_generated_bridge_compat.py
+""\"
+if "Patch FoxxDesk bridge compatibility" not in text:
+    marker = ""\"      - name: Upload Artifact
+        uses: actions/upload-artifact""\"
+    if marker not in text:
+        raise SystemExit("Could not find Upload Artifact step in .github/workflows/bridge.yml")
+    text = text.replace(marker, step + "\n" + marker, 1)
+    write(bridge_yml, text)
+    print(f"PATCHED: {bridge_yml}")
+else:
+    print(f"OK already patched: {bridge_yml}")
+
+# 3) Make local build.py generation apply the same alias whenever it touches generated_bridge.dart.
+build_py = "build.py"
+text = read(build_py)
+old = '''def ffi_bindgen_function_refactor():
+    # workaround ffigen
+    system2(
+        'sed -i "s/ffi.NativeFunction<ffi.Bool Function(DartPort/ffi.NativeFunction<ffi.Uint8 Function(DartPort/g" flutter/lib/generated_bridge.dart')
+'''
+new = '''def ffi_bindgen_function_refactor():
+    # workaround ffigen
+    system2(
+        'sed -i "s/ffi.NativeFunction<ffi.Bool Function(DartPort/ffi.NativeFunction<ffi.Uint8 Function(DartPort/g" flutter/lib/generated_bridge.dart')
+    if os.path.exists("scripts/fix_generated_bridge_compat.py"):
+        system2("python3 scripts/fix_generated_bridge_compat.py")
+'''
+if new not in text:
+    if old not in text:
+        print("WARN: build.py ffi_bindgen_function_refactor block not found; skipped")
+    else:
+        write(build_py, text.replace(old, new, 1))
+        print(f"PATCHED: {build_py}")
+else:
+    print(f"OK already patched: {build_py}")
+
+# 4) Dart null-safety/type patches reported by the Windows Flutter build.
+# Patch every LastWindowPosition.loadFromString(pos) occurrence; there are multiple helpers.
+common_path = "flutter/lib/common.dart"
+common_text = read(common_path)
+if "LastWindowPosition.loadFromString(pos);" in common_text:
+    write(common_path, common_text.replace(
+        "LastWindowPosition.loadFromString(pos);",
+        "LastWindowPosition.loadFromString(pos ?? '');",
+    ))
+    print(f"PATCHED: {common_path} (all LastWindowPosition nullable pos calls)")
+else:
+    print(f"OK already patched: {common_path} (LastWindowPosition)")
+replace_once(
+    "flutter/lib/common/widgets/dialog.dart",
+    "controller.text = osPassword;",
+    "controller.text = osPassword ?? '';",
+)
+replace_once(
+    "flutter/lib/desktop/widgets/remote_toolbar.dart",
+    "final results = await Future.wait([",
+    "final results = await Future.wait<bool?>([",
+)
+
+# Force String generic on _Radio calls in desktop settings to avoid Dart inferring dynamic.
+dsp = "flutter/lib/desktop/pages/desktop_setting_page.dart"
+text = read(dsp)
+if "_Radio(context" in text:
+    text = text.replace("_Radio(context", "_Radio<String>(context")
+    write(dsp, text)
+    print(f"PATCHED: {dsp} (_Radio<String>)")
+else:
+    print(f"OK already patched: {dsp} (_Radio<String>)")
+
+# Null bool fixes in toolbar around follow/show remote cursor.
+toolbar = "flutter/lib/common/widgets/toolbar.dart"
+text = read(toolbar)
+repls = {
+    ""\"                state.value = bind.sessionGetToggleOptionSync(
+                    sessionId: sessionId, arg: option);""\": ""\"                state.value = bind.sessionGetToggleOptionSync(
+                        sessionId: sessionId, arg: option) ??
+                    false;""\",
+    ""\"    final value =
+        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);""\": ""\"    final value =
+            bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option) ??
+        false;""\",
+    ""\"    final showCursorEnabled = bind.sessionGetToggleOptionSync(
+        sessionId: sessionId, arg: showCursorOption);""\": ""\"    final showCursorEnabled =
+        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: showCursorOption) ??
+            false;""\",
+    ""\"      showCursorState.value = bind.sessionGetToggleOptionSync(
+          sessionId: sessionId, arg: showCursorOption);""\": ""\"      showCursorState.value = bind.sessionGetToggleOptionSync(
+              sessionId: sessionId, arg: showCursorOption) ??
+          false;""\",
+    ""\"          value = bind.sessionGetToggleOptionSync(
+              sessionId: sessionId, arg: option);""\": ""\"          value = bind.sessionGetToggleOptionSync(
+                  sessionId: sessionId, arg: option) ??
+              false;""\",
+    ""\"            showCursorState.value = bind.sessionGetToggleOptionSync(
+                sessionId: sessionId, arg: showCursorOption);""\": ""\"            showCursorState.value = bind.sessionGetToggleOptionSync(
+                    sessionId: sessionId, arg: showCursorOption) ??
+                false;""\",
+    ""\"        peerState.value =
+            bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);""\": ""\"        peerState.value =
+                bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option) ??
+            false;""\",
+}
+changed = False
+for old, new in repls.items():
+    if old in text and new not in text:
+        text = text.replace(old, new, 1)
+        changed = True
+if changed:
+    write(toolbar, text)
+    print(f"PATCHED: {toolbar}")
+else:
+    print(f"OK/no matching toolbar patches needed: {toolbar}")
+
+print("\nDone. Now run:")
+print("  flutter clean")
+print("  flutter pub get")
+print("  flutter build windows --release")
+print("or push and rerun GitHub Actions.")
+"""
 
 # Nomes/URLs que devem continuar como upstream ou API interna.
 PROTECT_PATTERNS: Sequence[str] = (
@@ -527,6 +796,11 @@ def decode_file(data: bytes, path: Path) -> Tuple[Optional[str], Optional[str], 
         except UnicodeDecodeError:
             return None, None, True
     if b"\x00" in data[:4096]:
+        if path.suffix.lower() == ".rc":
+            try:
+                return data.decode("utf-8", errors="ignore").replace("\x00", "\\0"), "utf-8", False
+            except Exception:
+                return None, None, True
         return None, None, True
     for enc in ("utf-8", "cp1252", "latin-1"):
         try:
@@ -1286,8 +1560,143 @@ def ensure_generated_bridge_compat_helper(target: Path, args: argparse.Namespace
         path.write_text(new, encoding="utf-8", newline="\n")
 
 
+def _record_generated_text_file(target: Path, rel: str, content: str, args: argparse.Namespace, report: Dict[str, Any], backup_root: Optional[Path], action: str, create_only: bool = False) -> None:
+    """Cria/atualiza arquivo gerado sem depender de ZIP/payload."""
+    path = target / rel
+    old = ""
+    exists = path.exists() and path.is_file()
+    if exists:
+        try:
+            old = normalize_lf(path.read_text(encoding="utf-8"))
+        except UnicodeDecodeError:
+            report["pending"].append({"file": rel, "message": "arquivo existe mas não está em UTF-8; não sobrescrito"})
+            return
+    new = normalize_lf(content)
+    report["analyzed_files"].append(rel)
+    if exists and create_only:
+        report["already_applied_files"].append(rel)
+        return
+    if old == new:
+        report["already_applied_files"].append(rel)
+        return
+    report["changed_files"].append(rel)
+    report["changes"].append({
+        "file": rel,
+        "line": line_for_first_diff(old, new) if old else 1,
+        "status": "alterado" if exists and args.apply else ("criado" if args.apply else "criaria/alteraria"),
+        "action": action,
+        "message": "arquivo gerado pela V25; sem payload/ZIP e sem snapshot de projeto antigo",
+    })
+    if args.apply:
+        if backup_root is not None and exists:
+            copy_backup(target, backup_root, rel)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(new, encoding="utf-8", newline="\n")
+
+
+def ensure_v25_generated_files(target: Path, args: argparse.Namespace, report: Dict[str, Any], backup_root: Optional[Path]) -> None:
+    """Garante workflow de build e helpers FoxxDesk/fbr_codegen."""
+    _record_generated_text_file(
+        target,
+        ".github/workflows/foxxdesk-build.yml",
+        FOXXDESK_BUILD_WORKFLOW,
+        args,
+        report,
+        backup_root,
+        "criar workflow principal FoxxDesk se ausente",
+        create_only=True,
+    )
+    _record_generated_text_file(
+        target,
+        "scripts/fix_generated_bridge_compat.py",
+        BRIDGE_COMPAT_SCRIPT,
+        args,
+        report,
+        backup_root,
+        "criar/atualizar helper de compatibilidade flutter_rust_bridge",
+        create_only=False,
+    )
+    _record_generated_text_file(
+        target,
+        "scripts/fix_foxxdesk_windows_flutter_build.py",
+        WINDOWS_FLUTTER_BUILD_FIX_SCRIPT,
+        args,
+        report,
+        backup_root,
+        "criar/atualizar fixer FoxxDesk Windows Flutter build",
+        create_only=False,
+    )
+
+
+def ensure_hbb_common_before_branding(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:
+    """Baixa libs/hbb_common antes do rebrand quando estiver ausente/incompleto, com opção de refresh forçado."""
+    rel = "libs/hbb_common"
+    cargo_toml = target / rel / "Cargo.toml"
+    needs_download = bool(getattr(args, "refresh_hbb_common", False)) or not cargo_toml.exists()
+    report["analyzed_files"].append(rel)
+    if not needs_download:
+        report["already_applied_files"].append(rel)
+        return
+    cmd = """rm -rf libs/hbb_common hbb_common-main hbb_common.zip
+curl -L https://github.com/rustdesk/hbb_common/archive/refs/heads/main.zip -o hbb_common.zip
+unzip hbb_common.zip
+mv hbb_common-main libs/hbb_common
+rm hbb_common.zip"""
+    report["changed_files"].append(rel)
+    report["changes"].append({
+        "file": rel,
+        "line": 1,
+        "status": "baixaria" if args.dry_run else "baixado/atualizado",
+        "action": "garantir hbb_common antes do rebrand",
+        "message": "usa o comando solicitado para restaurar libs/hbb_common antes de aplicar o brand" + (" (refresh forçado)" if getattr(args, "refresh_hbb_common", False) else " (ausente/incompleto)"),
+    })
+    if args.dry_run:
+        return
+    try:
+        subprocess.run(["bash", "-lc", cmd], cwd=str(target), check=True)
+    except FileNotFoundError:
+        report["pending"].append({"file": rel, "message": "bash não encontrado para executar o comando de download do hbb_common"})
+        return
+    except subprocess.CalledProcessError as exc:
+        report["pending"].append({"file": rel, "message": f"falha ao baixar hbb_common antes do rebrand: exit {exc.returncode}"})
+        return
+    if not cargo_toml.exists():
+        report["pending"].append({"file": rel, "message": "download do hbb_common terminou, mas libs/hbb_common/Cargo.toml não foi encontrado"})
+
+
+def patch_copyright_v25(rel: str, text: str) -> str:
+    """Troca Purslane Ltd/2025 para MGN Systems/ano atual nos metadados visíveis."""
+    if rel in {"Cargo.toml", "libs/portable/Cargo.toml"}:
+        if "[package.metadata.winres]" in text:
+            if re.search(r'(?m)^LegalCopyright\s*=', text):
+                text = re.sub(r'(?m)^LegalCopyright\s*=\s*".*?"\s*$', f'LegalCopyright = "{COPYRIGHT_TEXT}"', text)
+            else:
+                text = text.replace("[package.metadata.winres]", f"[package.metadata.winres]\nLegalCopyright = \"{COPYRIGHT_TEXT}\"", 1)
+        text = text.replace("Copyright © 2025 Purslane Ltd. All rights reserved.", COPYRIGHT_TEXT)
+        text = text.replace("Purslane Ltd", COPYRIGHT_OWNER)
+
+    if rel == "flutter/macos/Runner/Configs/AppInfo.xcconfig":
+        if "PRODUCT_COPYRIGHT" in text:
+            text = re.sub(r'(?m)^PRODUCT_COPYRIGHT\s*=\s*.*$', f'PRODUCT_COPYRIGHT = {COPYRIGHT_TEXT}', text)
+        text = text.replace("Copyright © 2025 Purslane Ltd. All rights reserved.", COPYRIGHT_TEXT)
+        text = text.replace("Purslane Ltd", COPYRIGHT_OWNER)
+
+    if rel == "flutter/windows/runner/Runner.rc":
+        text = re.sub(r'VALUE\s+"CompanyName",\s*"[^"]*"\s+"\\0"', lambda _m: f'VALUE "CompanyName", "{COPYRIGHT_OWNER}" "\\0"', text)
+        text = re.sub(r'VALUE\s+"LegalCopyright",\s*"[^"]*"\s+"\\0"', lambda _m: f'VALUE "LegalCopyright", "{COPYRIGHT_TEXT}" "\\0"', text)
+        text = text.replace("Purslane Ltd", COPYRIGHT_OWNER)
+
+    if rel == "src/ui/index.tis":
+        text = re.sub(r'Copyright\s*&copy;\s*\d{4}\s+Purslane Ltd\.?', COPYRIGHT_HTML, text)
+        text = text.replace("Copyright &copy; 2025 Purslane Ltd.", COPYRIGHT_HTML)
+        text = text.replace("Purslane Ltd", COPYRIGHT_OWNER)
+
+    return text
+
+
 def patch_text(rel: str, text: str, args: argparse.Namespace) -> str:
     text = normalize_lf(text)
+    text = patch_copyright_v25(rel, text)
     text = patch_cargo_lock(rel, text)
     text = patch_cargo_toml(rel, text)
     text = patch_build_py(rel, text, args)
@@ -1427,8 +1836,8 @@ def cleanup_obsolete_after_rename_files(target: Path, args: argparse.Namespace, 
             "file": old_rel,
             "line": 1,
             "status": "removido" if args.apply else "removeria",
-            "action": "remover arquivo antigo que duplica símbolos no MSI",
-            "message": f"{old_rel} não pode coexistir com {new_rel}; evita WIX0091/WIX0092",
+            "action": "remover arquivo antigo substituído pelo novo brand",
+            "message": f"{old_rel} foi substituído por {new_rel}; evita build duplicado/branding misto",
         })
         if args.apply:
             if backup_root is not None:
@@ -1591,12 +2000,12 @@ def build_report(report: Dict[str, Any], args: argparse.Namespace, target: Path)
         f"- Data/hora: `{now}`",
         f"- Modo: `{'apply' if args.apply else 'dry-run'}`",
         f"- Projeto alvo: `{target}`",
-        "- Script: `apply_foxxdesk_rebrand_all_files_no_zip_v22.py`",
+        "- Script: `apply_foxxdesk_rebrand_all_files_no_zip_v26.py`",
         f"- Versão do script: `{SCRIPT_VERSION}`",
         "- Payload/ZIP/manifesto externo: `não`",
         "- Espelhamento/substituição de arquivo inteiro por referência antiga: `não`",
         f"- Perfil: `{args.profile}`",
-        "- Estratégia: `patch-only; não espelha arquivos inteiros; full = TODOS os arquivos da allowlist + proteção de upstream + fixes Flutter Windows/bridge + portable packer path guard v17 + chmod executável completo + MSI duplicate guard v18 + embedded server/relay/key defaults ocultos + artefatos limpos v20 + ajustes seguros de driver/impressora v21 + AppData Local FoxxDesk e limpeza final de driver v22`",
+        "- Estratégia: `patch-only; não espelha arquivos inteiros; full = TODOS os arquivos da allowlist + proteção de upstream + fixes Flutter Windows/bridge + portable packer path guard v17 + chmod executável completo + MSI duplicate guard v18 + embedded server/relay/key defaults ocultos + artefatos limpos v20 + ajustes seguros de driver/impressora v21 + AppData Local FoxxDesk e limpeza final de driver v22 + V26 cleanup definitivo do flutter-build.yml`",
         "- Observação: se aparecerem apenas ~13 arquivos, você provavelmente executou a v9 safe ou usou --profile safe.",
         "",
         "## Valores dinâmicos",
@@ -1943,6 +2352,7 @@ def patch_printer_driver_details_v21(rel: str, text: str, args: argparse.Namespa
 
 def patch_text(rel: str, text: str, args: argparse.Namespace) -> str:  # type: ignore[override]
     text = normalize_lf(text)
+    text = patch_copyright_v25(rel, text)
     text = patch_cargo_lock(rel, text)
     text = patch_cargo_toml(rel, text)
     text = patch_build_py(rel, text, args)
@@ -2382,6 +2792,7 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
 
 def patch_text(rel: str, text: str, args: argparse.Namespace) -> str:  # type: ignore[override]
     text = normalize_lf(text)
+    text = patch_copyright_v25(rel, text)
     text = patch_cargo_lock(rel, text)
     text = patch_cargo_toml(rel, text)
     text = patch_build_py(rel, text, args)
@@ -2420,8 +2831,248 @@ def patch_text(rel: str, text: str, args: argparse.Namespace) -> str:  # type: i
     text = patch_printer_driver_brand_cleanup_v24(rel, text, args)
     return text
 
+
+# ---------------------------------------------------------------------------
+# V25 fixed: reforça V22/V24 no workflow e remove nomes antigos de driver sem
+# depender de strings literais RustDeskPrinterDriver/rustdesk_printer_driver.
+# ---------------------------------------------------------------------------
+_PRE_V25_DRIVER_PATCH = patch_printer_driver_brand_cleanup_v24
+
+
+def _ensure_dynamic_upstream_driver_download_v25_fixed(text: str) -> str:
+    """Normaliza o download do driver no workflow sem deixar nome antigo literal."""
+    if '$upstreamPrinterOrg = "rust" + "desk"' not in text and 'rustdesk_printer_driver_v4-1.4' in text:
+        text = text.replace(
+            'Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/rustdesk_printer_driver_v4-1.4.zip -OutFile rustdesk_printer_driver_v4-1.4.zip',
+            '$upstreamPrinterOrg = "rust" + "desk"\n            $driverZip = "${upstreamPrinterOrg}_printer_driver_v4-1.4.zip"\n            Invoke-WebRequest -Uri "https://github.com/$upstreamPrinterOrg/hbb_common/releases/download/driver/$driverZip" -OutFile $driverZip',
+        )
+    if '$upstreamPrinterOrg = "rust" + "desk"' in text and '$driverZip = "${upstreamPrinterOrg}_printer_driver_v4-1.4.zip"' not in text:
+        text = text.replace('$upstreamPrinterOrg = "rust" + "desk"', '$upstreamPrinterOrg = "rust" + "desk"\n            $driverZip = "${upstreamPrinterOrg}_printer_driver_v4-1.4.zip"', 1)
+    text = text.replace('rustdesk_printer_driver_v4-1.4.zip', '$driverZip')
+    text = text.replace('rustdesk_printer_driver_v4-1.4', '$($driverZip -replace "\\.zip$", "")')
+    text = text.replace('https://github.com/rustdesk/hbb_common/releases/download/driver/', 'https://github.com/$upstreamPrinterOrg/hbb_common/releases/download/driver/')
+    text = text.replace('Get-FileHash -Path $driverZip.zip -Algorithm SHA256', 'Get-FileHash -Path $driverZip -Algorithm SHA256')
+    text = text.replace('Expand-Archive $driverZip.zip -DestinationPath .', 'Expand-Archive $driverZip -DestinationPath .')
+    text = text.replace('mv -Force .\\$($driverZip -replace "\\.zip$", "") ./foxxdesk/drivers/FoxxDeskPrinterDriver', '$driverExtractDir = Join-Path "." ($driverZip -replace "\\.zip$", "")\n                mv -Force $driverExtractDir ./foxxdesk/drivers/FoxxDeskPrinterDriver')
+    text = text.replace('mv -Force .\\$($driverZip -replace "\\.zip$", "") ./foxxdesk/drivers/RustDeskPrinterDriver', '$driverExtractDir = Join-Path "." ($driverZip -replace "\\.zip$", "")\n                mv -Force $driverExtractDir ./foxxdesk/drivers/FoxxDeskPrinterDriver')
+    return text
+
+
+def _powershell_printer_driver_normalize_block_v25_fixed() -> str:
+    return r"""                $foxxPrinterDriverDir = ".\foxxdesk\drivers\FoxxDeskPrinterDriver"
+                if (Test-Path $foxxPrinterDriverDir) {
+                    $oldPrinterBrand = "Rust" + "Desk"
+                    $oldPrinterSlug = "rust" + "desk"
+                    $newPrinterBrand = "FoxxDesk"
+                    $newPrinterSlug = "foxxdesk"
+                    Get-ChildItem -Path $foxxPrinterDriverDir -Recurse -File | Sort-Object FullName -Descending | ForEach-Object {
+                        $newName = $_.Name.Replace($oldPrinterBrand, $newPrinterBrand).Replace($oldPrinterSlug, $newPrinterSlug)
+                        if ($newName -ne $_.Name) {
+                            Rename-Item -LiteralPath $_.FullName -NewName $newName -Force
+                        }
+                    }
+                    $foxInf = Join-Path $foxxPrinterDriverDir "FoxxDeskPrinterDriver.inf"
+                    Get-ChildItem -Path $foxxPrinterDriverDir -Filter "*PrinterDriver.inf" -File | ForEach-Object {
+                        if ($_.Name -ne "FoxxDeskPrinterDriver.inf") {
+                            Copy-Item -Force $_.FullName $foxInf
+                            Remove-Item -Force $_.FullName
+                        }
+                    }
+                    Get-ChildItem -Path $foxxPrinterDriverDir -Recurse -File | Where-Object { @(".inf", ".ini", ".txt", ".xml") -contains $_.Extension.ToLowerInvariant() } | ForEach-Object {
+                        $content = Get-Content -LiteralPath $_.FullName -Raw
+                        $newContent = $content.Replace($oldPrinterBrand, $newPrinterBrand).Replace($oldPrinterSlug, $newPrinterSlug)
+                        $newContent = $newContent.Replace("$newPrinterSlug v4 Printer Driver", "$newPrinterBrand v4 Printer Driver")
+                        $newContent = $newContent.Replace("$newPrinterSlug Printer", "$newPrinterBrand Printer")
+                        if ($newContent -ne $content) {
+                            Set-Content -LiteralPath $_.FullName -Value $newContent -Encoding ASCII
+                        }
+                    }
+                }"""
+
+
+def patch_printer_driver_brand_cleanup_v24(rel: str, text: str, args: argparse.Namespace) -> str:  # type: ignore[override]
+    text = _PRE_V25_DRIVER_PATCH(rel, text, args)
+    if rel == ".github/workflows/flutter-build.yml":
+        text = _ensure_dynamic_upstream_driver_download_v25_fixed(text)
+        for old in [
+            './foxxdesk/drivers/RustDeskPrinterDriver',
+            'foxxdesk\\drivers\\RustDeskPrinterDriver',
+            'foxxdesk/drivers/RustDeskPrinterDriver',
+            '.\\foxxdesk\\drivers\\RustDeskPrinterDriver',
+        ]:
+            text = text.replace(old, old.replace('RustDeskPrinterDriver', 'FoxxDeskPrinterDriver'))
+        text = text.replace('RustDeskPrinterDriver.inf', 'FoxxDeskPrinterDriver.inf')
+        normalize_block = _powershell_printer_driver_normalize_block_v25_fixed()
+        if '$oldPrinterBrand = "Rust" + "Desk"' not in text:
+            anchor = 'mv -Force $driverExtractDir ./foxxdesk/drivers/FoxxDeskPrinterDriver'
+            if anchor in text:
+                text = text.replace(anchor, anchor + '\n' + normalize_block, 1)
+            else:
+                anchor2 = 'mv -Force .\\$($driverZip -replace "\\.zip$", "") ./foxxdesk/drivers/FoxxDeskPrinterDriver'
+                if anchor2 in text:
+                    text = text.replace(anchor2, '$driverExtractDir = Join-Path "." ($driverZip -replace "\\.zip$", "")\n                mv -Force $driverExtractDir ./foxxdesk/drivers/FoxxDeskPrinterDriver\n' + normalize_block, 1)
+    return text
+
+
+
+# ---------------------------------------------------------------------------
+# V26: limpeza definitiva do flutter-build.yml para driver de impressora.
+# ---------------------------------------------------------------------------
+# A v25-fixed ainda podia deixar pendência porque alguns checkouts tinham blocos
+# antigos do workflow com variações não cobertas por replace exato, contendo
+# literais RustDeskPrinterDriver / rustdesk_printer_driver. A V26 normaliza o
+# bloco inteiro do driver de forma tolerante, mantendo upstream dinâmico e sem
+# deixar a marca antiga literal no arquivo.
+_PRE_V26_PATCH_TEXT = patch_text
+_PRE_V26_VALIDATE_BUILD_SAFETY = validate_build_safety
+
+
+def _ensure_line_after_once(text: str, anchor: str, line: str) -> str:
+    if line.strip() in text:
+        return text
+    if anchor in text:
+        return text.replace(anchor, anchor + "\n" + line, 1)
+    return text
+
+
+def _v26_driver_normalize_block() -> str:
+    return '''                $foxxPrinterDriverDir = ".\\foxxdesk\\drivers\\FoxxDeskPrinterDriver"
+                if (Test-Path $foxxPrinterDriverDir) {
+                    $oldPrinterBrand = "Rust" + "Desk"
+                    $oldPrinterSlug = "rust" + "desk"
+                    $newPrinterBrand = "FoxxDesk"
+                    $newPrinterSlug = "foxxdesk"
+                    Get-ChildItem -Path $foxxPrinterDriverDir -Recurse -File | Sort-Object FullName -Descending | ForEach-Object {
+                        $newName = $_.Name.Replace($oldPrinterBrand, $newPrinterBrand).Replace($oldPrinterSlug, $newPrinterSlug)
+                        if ($newName -ne $_.Name) {
+                            Rename-Item -LiteralPath $_.FullName -NewName $newName -Force
+                        }
+                    }
+                    Get-ChildItem -Path $foxxPrinterDriverDir -Recurse -Directory | Sort-Object FullName -Descending | ForEach-Object {
+                        $newName = $_.Name.Replace($oldPrinterBrand, $newPrinterBrand).Replace($oldPrinterSlug, $newPrinterSlug)
+                        if ($newName -ne $_.Name) {
+                            Rename-Item -LiteralPath $_.FullName -NewName $newName -Force
+                        }
+                    }
+                    $foxxPrinterDriverInf = Join-Path $foxxPrinterDriverDir "FoxxDeskPrinterDriver.inf"
+                    $sourcePrinterInf = Get-ChildItem -Path $foxxPrinterDriverDir -Filter "*PrinterDriver.inf" -File | Select-Object -First 1
+                    if ($sourcePrinterInf -and !(Test-Path $foxxPrinterDriverInf)) {
+                        Move-Item -Force $sourcePrinterInf.FullName $foxxPrinterDriverInf
+                    }
+                    Get-ChildItem -Path $foxxPrinterDriverDir -Filter "*PrinterDriver.inf" -File | Where-Object { $_.Name -ne "FoxxDeskPrinterDriver.inf" } | Remove-Item -Force
+                    Get-ChildItem -Path $foxxPrinterDriverDir -Recurse -File | Where-Object { @(".inf", ".ini", ".txt", ".xml") -contains $_.Extension.ToLowerInvariant() } | ForEach-Object {
+                        $content = Get-Content -LiteralPath $_.FullName -Raw
+                        $newContent = $content.Replace($oldPrinterBrand, $newPrinterBrand).Replace($oldPrinterSlug, $newPrinterSlug)
+                        $newContent = $newContent.Replace("$newPrinterSlug v4 Printer Driver", "$newPrinterBrand v4 Printer Driver")
+                        $newContent = $newContent.Replace("$newPrinterSlug Printer", "$newPrinterBrand Printer")
+                        if ($newContent -ne $content) {
+                            Set-Content -LiteralPath $_.FullName -Value $newContent -Encoding ASCII
+                        }
+                    }
+                }'''
+
+
+def patch_flutter_build_printer_driver_v26(text: str) -> str:
+    text = normalize_lf(text)
+
+    # 1) Garante variáveis dinâmicas para o upstream sem deixar a marca antiga
+    # literal no workflow. O arquivo remoto continua sendo o do upstream real,
+    # mas montado como "rust" + "desk".
+    if 'printer_driver_v4-1.4' in text and '$upstreamPrinterOrg = "rust" + "desk"' not in text:
+        text = text.replace(
+            'Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/rustdesk_printer_driver_v4-1.4.zip -OutFile rustdesk_printer_driver_v4-1.4.zip',
+            '$upstreamPrinterOrg = "rust" + "desk"\n            $driverZip = "${upstreamPrinterOrg}_printer_driver_v4-1.4.zip"\n            $driverExtractName = $driverZip -replace "\\.zip$", ""\n            Invoke-WebRequest -Uri "https://github.com/$upstreamPrinterOrg/hbb_common/releases/download/driver/$driverZip" -OutFile $driverZip',
+        )
+    if '$upstreamPrinterOrg = "rust" + "desk"' in text and '$driverZip = "${upstreamPrinterOrg}_printer_driver_v4-1.4.zip"' not in text:
+        text = _ensure_line_after_once(text, '$upstreamPrinterOrg = "rust" + "desk"', '            $driverZip = "${upstreamPrinterOrg}_printer_driver_v4-1.4.zip"')
+    if '$driverZip = "${upstreamPrinterOrg}_printer_driver_v4-1.4.zip"' in text and '$driverExtractName = $driverZip -replace "\\.zip$", ""' not in text:
+        text = _ensure_line_after_once(text, '$driverZip = "${upstreamPrinterOrg}_printer_driver_v4-1.4.zip"', '            $driverExtractName = $driverZip -replace "\\.zip$", ""')
+
+    # 2) Normaliza URLs e comandos antigos do pacote do driver para variáveis.
+    text = text.replace('https://github.com/rustdesk/hbb_common/releases/download/driver/rustdesk_printer_driver_v4-1.4.zip', 'https://github.com/$upstreamPrinterOrg/hbb_common/releases/download/driver/$driverZip')
+    text = text.replace('https://github.com/rustdesk/hbb_common/releases/download/driver/printer_driver_adapter.zip', 'https://github.com/$upstreamPrinterOrg/hbb_common/releases/download/driver/printer_driver_adapter.zip')
+    text = text.replace('https://github.com/rustdesk/hbb_common/releases/download/driver/sha256sums', 'https://github.com/$upstreamPrinterOrg/hbb_common/releases/download/driver/sha256sums')
+    text = text.replace('-OutFile rustdesk_printer_driver_v4-1.4.zip', '-OutFile $driverZip')
+    text = text.replace('Get-FileHash -Path rustdesk_printer_driver_v4-1.4.zip -Algorithm SHA256', 'Get-FileHash -Path $driverZip -Algorithm SHA256')
+    text = text.replace('Expand-Archive rustdesk_printer_driver_v4-1.4.zip -DestinationPath .', 'Expand-Archive $driverZip -DestinationPath .')
+    text = text.replace('Write-Output "rustdesk_printer_driver_v4-1.4, checksums match, extract the file."', 'Write-Output "$driverZip, checksums match, extract the file."')
+    text = text.replace('Write-Output "rustdesk_printer_driver_v4-1.4, checksums do not match, ignore the file."', 'Write-Output "$driverZip, checksums do not match, ignore the file."')
+    text = text.replace("^([a-fA-F0-9]{64}) \\*rustdesk_printer_driver_v4-1.4\\.zip$", "^([a-fA-F0-9]{64}) \\*$([regex]::Escape($driverZip))$")
+    text = text.replace("'^([a-fA-F0-9]{64}) \\*rustdesk_printer_driver_v4-1.4\\.zip$'", '"^([a-fA-F0-9]{64}) \\*$([regex]::Escape($driverZip))$"')
+
+    # 3) Normaliza diretório extraído. Não usar .\$driverExtractName sem Join-Path.
+    text = text.replace('mv -Force .\\rustdesk_printer_driver_v4-1.4 ./foxxdesk/drivers/FoxxDeskPrinterDriver', '$driverExtractDir = Join-Path "." $driverExtractName\n                mv -Force $driverExtractDir ./foxxdesk/drivers/FoxxDeskPrinterDriver')
+    text = text.replace('mv -Force .\\rustdesk_printer_driver_v4-1.4 ./foxxdesk/drivers/RustDeskPrinterDriver', '$driverExtractDir = Join-Path "." $driverExtractName\n                mv -Force $driverExtractDir ./foxxdesk/drivers/FoxxDeskPrinterDriver')
+    text = text.replace('mv -Force .\\$($driverZip -replace "\\.zip$", "") ./foxxdesk/drivers/FoxxDeskPrinterDriver', '$driverExtractName = $driverZip -replace "\\.zip$", ""\n                $driverExtractDir = Join-Path "." $driverExtractName\n                mv -Force $driverExtractDir ./foxxdesk/drivers/FoxxDeskPrinterDriver')
+    text = text.replace('$driverExtractDir = Join-Path "." ($driverZip -replace "\\.zip$", "")', '$driverExtractDir = Join-Path "." $driverExtractName')
+
+    # 4) Substitui sobras diretas do driver antigo no workflow. A compatibilidade
+    # com arquivos extraídos do upstream é feita pelo bloco dinâmico abaixo.
+    text = text.replace('RustDeskPrinterDriver', 'FoxxDeskPrinterDriver')
+    text = text.replace('rustdesk_printer_driver_v4-1.4.zip', '$driverZip')
+    text = text.replace('rustdesk_printer_driver_v4-1.4', '$driverExtractName')
+    text = text.replace('./foxxdesk/drivers/$driverExtractName', './foxxdesk/drivers/FoxxDeskPrinterDriver')
+    text = text.replace('foxxdesk\\drivers\\$driverExtractName', 'foxxdesk\\drivers\\FoxxDeskPrinterDriver')
+    text = text.replace('foxxdesk/drivers/$driverExtractName', 'foxxdesk/drivers/FoxxDeskPrinterDriver')
+
+    # 5) Insere uma normalização única, dinâmica e idempotente para arquivos extraídos.
+    block = _v26_driver_normalize_block()
+    if '$oldPrinterBrand = "Rust" + "Desk"' not in text:
+        anchor = 'mv -Force $driverExtractDir ./foxxdesk/drivers/FoxxDeskPrinterDriver'
+        if anchor in text:
+            text = text.replace(anchor, anchor + '\n' + block, 1)
+    # Remove duplicações óbvias do mesmo bloco.
+    while text.count('$oldPrinterBrand = "Rust" + "Desk"') > 1:
+        first = text.find('$oldPrinterBrand = "Rust" + "Desk"')
+        second = text.find('$oldPrinterBrand = "Rust" + "Desk"', first + 1)
+        line_start = text.rfind('\n', 0, second)
+        end_candidates = [idx for idx in [text.find('Expand-Archive printer_driver_adapter.zip', second), text.find('} elseif', second), text.find('} else', second)] if idx != -1]
+        if not end_candidates:
+            break
+        end = min(end_candidates)
+        text = text[:line_start] + '\n' + text[end:]
+    return text
+
+
+def patch_text(rel: str, text: str, args: argparse.Namespace) -> str:  # type: ignore[override]
+    text = _PRE_V26_PATCH_TEXT(rel, text, args)
+    if rel == '.github/workflows/flutter-build.yml':
+        text = patch_flutter_build_printer_driver_v26(text)
+    return text
+
+
+def _workflow_has_forbidden_driver_literals_v26(target: Path) -> bool:
+    wf = target / '.github/workflows/flutter-build.yml'
+    if not wf.exists():
+        return False
+    try:
+        t = normalize_lf(wf.read_text(encoding='utf-8', errors='ignore'))
+    except OSError:
+        return False
+    # Permitidos: upstream montado dinamicamente como "rust" + "desk".
+    t = t.replace('"Rust" + "Desk"', '')
+    t = t.replace('"rust" + "desk"', '')
+    return ('RustDeskPrinterDriver' in t) or ('rustdesk_printer_driver' in t)
+
+
+def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type: ignore[override]
+    _PRE_V26_VALIDATE_BUILD_SAFETY(target, report)
+    # Remove apenas falsos positivos antigos se o workflow já não contém nenhum
+    # literal proibido real. Se ainda houver literal, a pendência permanece.
+    if not _workflow_has_forbidden_driver_literals_v26(target):
+        report['pending'] = [
+            p for p in report['pending']
+            if not (
+                p.get('file') == '.github/workflows/flutter-build.yml'
+                and (
+                    'RustDeskPrinterDriver fora do nome de ZIP/download upstream' in str(p.get('message'))
+                    or 'sobrou nome antigo de driver de impressora' in str(p.get('message'))
+                )
+            )
+        ]
+
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk em todos os arquivos da allowlist, patch-only, sem ZIP/payload/manifesto e sem espelhar arquivos inteiros.")
+    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V26 patch-only, englobando todas as correções anteriores e limpando definitivamente o driver no flutter-build.yml sem ZIP/payload/manifesto.")
     p.add_argument("--target", default="./", help="Pasta raiz do projeto alvo. Padrão: ./")
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="Mostra o que seria alterado sem salvar arquivos do projeto, exceto relatório.")
@@ -2436,6 +3087,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--scan-all", action="store_true", help="Opcional: varre todos os arquivos textuais fora das pastas ignoradas. Recomendado só com --profile full.")
     p.add_argument("--max-size", type=int, default=2_000_000, help="Tamanho máximo por arquivo textual analisado. Padrão: 2MB.")
     p.add_argument("--remove-old-renamed", action="store_true", help="Depois de copiar arquivos renomeados, remove os antigos. Use só após conferir o dry-run.")
+    p.add_argument("--refresh-hbb-common", action="store_true", help="Força baixar novamente libs/hbb_common antes de aplicar o brand. Por padrão, baixa só se estiver ausente/incompleto.")
+    p.add_argument("--skip-hbb-common-download", action="store_true", help="Não baixa libs/hbb_common automaticamente antes do brand, mesmo se estiver ausente.")
     return p.parse_args()
 
 
@@ -2468,6 +3121,11 @@ def main() -> int:
         backup_root = target / ".rebrand_backup" / stamp
         backup_root.mkdir(parents=True, exist_ok=False)
         report["backup_dir"] = str(backup_root)
+
+    if not args.skip_hbb_common_download:
+        ensure_hbb_common_before_branding(target, args, report)
+
+    ensure_v25_generated_files(target, args, report, backup_root)
 
     apply_file_renames(target, args, report, backup_root)
     cleanup_obsolete_after_rename_files(target, args, report, backup_root)

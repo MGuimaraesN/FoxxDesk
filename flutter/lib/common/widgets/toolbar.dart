@@ -797,7 +797,8 @@ Future<List<TToggleMenu>> toolbarCursor(
                 await bind.sessionToggleOption(
                     sessionId: sessionId, value: option);
                 state.value = bind.sessionGetToggleOptionSync(
-                    sessionId: sessionId, arg: option);
+                        sessionId: sessionId, arg: option) ??
+                    false;
               }
             : null));
   }
@@ -811,18 +812,21 @@ Future<List<TToggleMenu>> toolbarCursor(
       !bind.sessionIsMultiUiSession(sessionId: sessionId)) {
     final option = 'follow-remote-cursor';
     final value =
-        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);
+            bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option) ??
+        false;
     final showCursorOption = 'show-remote-cursor';
     final showCursorState = ShowRemoteCursorState.find(id);
     final showCursorLockState = ShowRemoteCursorLockState.find(id);
-    final showCursorEnabled = bind.sessionGetToggleOptionSync(
-        sessionId: sessionId, arg: showCursorOption);
+    final showCursorEnabled =
+        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: showCursorOption) ??
+            false;
     showCursorLockState.value = value;
     if (value && !showCursorEnabled) {
       await bind.sessionToggleOption(
           sessionId: sessionId, value: showCursorOption);
       showCursorState.value = bind.sessionGetToggleOptionSync(
-          sessionId: sessionId, arg: showCursorOption);
+              sessionId: sessionId, arg: showCursorOption) ??
+          false;
     }
     v.add(TToggleMenu(
         child: Text(translate('Follow remote cursor')),
@@ -831,13 +835,15 @@ Future<List<TToggleMenu>> toolbarCursor(
           if (value == null) return;
           await bind.sessionToggleOption(sessionId: sessionId, value: option);
           value = bind.sessionGetToggleOptionSync(
-              sessionId: sessionId, arg: option);
+                  sessionId: sessionId, arg: option) ??
+              false;
           showCursorLockState.value = value;
           if (!showCursorEnabled) {
             await bind.sessionToggleOption(
                 sessionId: sessionId, value: showCursorOption);
             showCursorState.value = bind.sessionGetToggleOptionSync(
-                sessionId: sessionId, arg: showCursorOption);
+                    sessionId: sessionId, arg: showCursorOption) ??
+                false;
           }
         }));
   }
@@ -876,7 +882,8 @@ Future<List<TToggleMenu>> toolbarCursor(
         if (value == null) return;
         await bind.sessionToggleOption(sessionId: sessionId, value: option);
         peerState.value =
-            bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);
+                bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option) ??
+            false;
       },
     ));
   }
