@@ -5,7 +5,7 @@ set -e
 if [ "$1" = configure ]; then
 
 	INITSYS=$(ls -al /proc/1/exe | awk -F' ' '{print $NF}' | awk -F'/' '{print $NF}')
-	ln -f -s /usr/share/foxxdesk/rustdesk /usr/bin/foxxdesk
+	ln -f -s /usr/share/foxxdesk/foxxdesk /usr/bin/foxxdesk
 
 	if [ "systemd" == "$INITSYS" ]; then
 

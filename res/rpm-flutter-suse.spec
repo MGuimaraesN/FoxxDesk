@@ -59,7 +59,7 @@ esac
 cp /usr/share/foxxdesk/files/foxxdesk.service /etc/systemd/system/foxxdesk.service
 cp /usr/share/foxxdesk/files/foxxdesk.desktop /usr/share/applications/
 cp /usr/share/foxxdesk/files/foxxdesk-link.desktop /usr/share/applications/
-ln -sf /usr/share/foxxdesk/rustdesk /usr/bin/foxxdesk
+ln -sf /usr/share/foxxdesk/foxxdesk /usr/bin/foxxdesk
 systemctl daemon-reload
 systemctl enable foxxdesk
 systemctl start foxxdesk

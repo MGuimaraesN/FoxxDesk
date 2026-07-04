@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCRIPT_VERSION = "v29-fix-powershell-driver-extract-2026-07-04"
+SCRIPT_VERSION = "v30-fix-portable-packer-and-artifact-paths-2026-07-04"
 APP_DISPLAY_NAME = "FoxxDesk"
 APP_SLUG = "foxxdesk"
 APP_SLUG_UPPER = "FOXXDESK"
@@ -2941,7 +2941,7 @@ def run_icon_assets_v28(target: Path, args: argparse.Namespace, report: Dict[str
         logging.warning("Icon assets stderr:\n%s", completed.stderr.strip())
 
     if completed.returncode != 0:
-        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v29.log"})
+        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v30.log"})
         return
 
     changed_match = re.search(r"arquivos alterados:\s*(\d+)", completed.stdout or "")
@@ -2962,7 +2962,7 @@ def run_icon_assets_v28(target: Path, args: argparse.Namespace, report: Dict[str
 
 
 # ---------------------------------------------------------------------------
-# V29: corrige ParserError do PowerShell no flutter-build.yml.
+# V30: corrige ParserError do PowerShell no flutter-build.yml.
 # A V28/V26 ainda podia deixar caminho com subexpressão:
 #   .\$($driverZip -replace "\.zip$", "")
 # Isso quebra o script temporário do GitHub Actions. A V29 remove qualquer
@@ -3134,7 +3134,7 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
     if _workflow_has_powershell_driver_parser_risk_v29(target):
         report["pending"].append({
             "file": ".github/workflows/flutter-build.yml",
-            "message": "V29: workflow ainda contém risco de ParserError PowerShell no driver (.\\$($driverZip...), $driverZip -replace, destino rustdesk/drivers ou literal antigo de driver)",
+            "message": "V30: workflow ainda contém risco de ParserError PowerShell no driver (.\\$($driverZip...), $driverZip -replace, destino rustdesk/drivers ou literal antigo de driver)",
         })
     else:
         # Remove pendências antigas/falsos positivos sobre driver do workflow se a checagem V29 passou.
@@ -3152,8 +3152,8 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
 
 
 def setup_logging_v28(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:  # type: ignore[override]
-    """V29: mantém flags de logging da V28, mas usa rebrand_v29.log por padrão."""
-    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v29.log"
+    """V30: mantém flags de logging da V28, mas usa rebrand_v30.log por padrão."""
+    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v30.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     level = logging.DEBUG if getattr(args, "verbose", False) else logging.INFO
     root_logger = logging.getLogger()
@@ -3175,6 +3175,162 @@ def setup_logging_v28(target: Path, args: argparse.Namespace, report: Dict[str, 
     logging.info("Modo: %s | profile=%s | scan_all=%s", "apply" if args.apply else "dry-run", args.profile, args.scan_all)
     logging.info("Icon assets: %s | source=%s", bool(getattr(args, "apply_icon_assets", False)), getattr(args, "icon_source", "res/icon.png"))
 
+
+# ---------------------------------------------------------------------------
+# V30: corrige workflow ainda apontando para binários/pastas rustdesk após o
+# rename do crate/binário para foxxdesk/foxxdesk-portable-packer.
+# ---------------------------------------------------------------------------
+_PRE_V30_PATCH_TEXT = patch_text
+_PRE_V30_VALIDATE_BUILD_SAFETY = validate_build_safety
+
+
+def patch_workflow_binary_artifact_paths_v30(rel: str, text: str, args: argparse.Namespace) -> str:
+    """Corrige caminhos locais do GitHub Actions que ainda usam rustdesk.
+
+    Mantém URLs/upstreams reais com rustdesk-org/rustdesk, mas normaliza:
+    - binários gerados por Cargo: foxxdesk / foxxdesk-portable-packer
+    - pasta local de artefato Windows: foxxdesk
+    - nomes finais de SignOutput/release: foxxdesk-...
+    """
+    if rel != ".github/workflows/flutter-build.yml":
+        return text
+
+    # Artefatos/pastas locais do app Windows. Estes não são upstream.
+    literal_replacements = {
+        # Portable packer: crate foi renomeado para foxxdesk-portable-packer.
+        "./target/release/rustdesk-portable-packer.exe": "./target/release/foxxdesk-portable-packer.exe",
+        "target/release/rustdesk-portable-packer.exe": "target/release/foxxdesk-portable-packer.exe",
+        # Binário principal compilado por cargo.
+        "./target/release/rustdesk.exe": "./target/release/foxxdesk.exe",
+        "target/release/rustdesk.exe": "target/release/foxxdesk.exe",
+        "./target/release/rustdesk ": "./target/release/foxxdesk ",
+        "target/release/rustdesk ": "target/release/foxxdesk ",
+        "./target/release/rustdesk\n": "./target/release/foxxdesk\n",
+        "target/release/rustdesk\n": "target/release/foxxdesk\n",
+        # Pasta de staging local. Não confundir com URLs rustdesk-org.
+        "../../rustdesk/": "../../foxxdesk/",
+        "./rustdesk/": "./foxxdesk/",
+        "./rustdesk": "./foxxdesk",
+        "path: rustdesk": "path: foxxdesk",
+        "path: ./rustdesk": "path: ./foxxdesk",
+        "path: \"./rustdesk\"": "path: \"./foxxdesk\"",
+        "path: 'rustdesk'": "path: 'foxxdesk'",
+        "path: './rustdesk'": "path: './foxxdesk'",
+        # Release/SignOutput locais.
+        "./Release/rustdesk.exe": "./Release/foxxdesk.exe",
+        "./Release/rustdesk ": "./Release/foxxdesk ",
+        "./Release/rustdesk\n": "./Release/foxxdesk\n",
+        "Release/rustdesk.exe": "Release/foxxdesk.exe",
+        "Release/rustdesk ": "Release/foxxdesk ",
+        "Release/rustdesk\n": "Release/foxxdesk\n",
+        "./SignOutput/rustdesk-": "./SignOutput/foxxdesk-",
+        "SignOutput/rustdesk-": "SignOutput/foxxdesk-",
+        "rustdesk-${{ env.VERSION }}": "foxxdesk-${{ env.VERSION }}",
+        "rustdesk-unsigned-windows": "foxxdesk-unsigned-windows",
+        "rustdesk*??.deb": "foxxdesk*??.deb",
+        "rustdesk-*.exe": "foxxdesk-*.exe",
+        "rustdesk-*.msi": "foxxdesk-*.msi",
+    }
+    for old, new in literal_replacements.items():
+        text = text.replace(old, new)
+
+    # Regex para variações com espaços/quotes que apareceram no log.
+    text = re.sub(
+        r'(?m)^(\s*)mv\s+\.\/target\/release\/rustdesk-portable-packer\.exe\s+\.\/SignOutput\/rustdesk-',
+        r'\1mv ./target/release/foxxdesk-portable-packer.exe ./SignOutput/foxxdesk-',
+        text,
+    )
+    text = re.sub(
+        r'(?m)^(\s*)mv\s+\.\/target\/release\/rustdesk\.exe\s+\.\/Release\/rustdesk\.exe\s*$',
+        r'\1mv ./target/release/foxxdesk.exe ./Release/foxxdesk.exe',
+        text,
+    )
+    text = re.sub(
+        r'(?m)^(\s*)mv\s+\.\/target\/release\/rustdesk\s+\.\/Release\/rustdesk\s*$',
+        r'\1mv ./target/release/foxxdesk ./Release/foxxdesk',
+        text,
+    )
+    text = re.sub(
+        r'(?m)^(\s*)python3\s+\.\/generate\.py\s+-f\s+\.\.\/\.\.\/rustdesk\/\s+-o\s+\.\s+-e\s+(?:rustdesk|foxxdesk)\.exe\s*$',
+        r'\1python3 ./generate.py -f ../../foxxdesk/ -o . -e foxxdesk.exe',
+        text,
+    )
+    text = re.sub(
+        r'(?m)^(\s*)name:\s+rustdesk-unsigned-windows-',
+        r'\1name: foxxdesk-unsigned-windows-',
+        text,
+    )
+    text = re.sub(
+        r'(?m)^(\s*)path:\s+["\']?\.\/rustdesk["\']?\s*$',
+        r'\1path: ./foxxdesk',
+        text,
+    )
+    text = re.sub(
+        r'(?m)^(\s*)path:\s+["\']?rustdesk["\']?\s*$',
+        r'\1path: foxxdesk',
+        text,
+    )
+
+    # Garante que o portable packer exista antes do mv, com fallback claro.
+    # Isso evita erro obscuro caso algum runner/cargo gere nome diferente.
+    portable_mv_re = re.compile(
+        r'(?m)^(\s*)mv\s+\.\/target\/release\/foxxdesk-portable-packer\.exe\s+(\.\/SignOutput\/foxxdesk-[^\n]+\.exe)\s*$'
+    )
+
+    def portable_mv_repl(m: re.Match[str]) -> str:
+        indent = m.group(1)
+        dest = m.group(2)
+        block = (
+            f'{indent}portable_packer="./target/release/foxxdesk-portable-packer.exe"\n'
+            f'{indent}if [ ! -f "$portable_packer" ]; then\n'
+            f'{indent}  echo "Missing $portable_packer"\n'
+            f'{indent}  echo "Available target/release executables:"\n'
+            f'{indent}  ls -la ./target/release/*.exe ./target/release/*portable* 2>/dev/null || true\n'
+            f'{indent}  exit 1\n'
+            f'{indent}fi\n'
+            f'{indent}mv "$portable_packer" {dest}'
+        )
+        # Idempotência: se já foi expandido, não expande de novo.
+        return block
+
+    if 'portable_packer="./target/release/foxxdesk-portable-packer.exe"' not in text:
+        text = portable_mv_re.sub(portable_mv_repl, text)
+
+    return text
+
+
+def patch_text(rel: str, text: str, args: argparse.Namespace) -> str:  # type: ignore[override]
+    text = _PRE_V30_PATCH_TEXT(rel, text, args)
+    text = patch_workflow_binary_artifact_paths_v30(rel, text, args)
+    return text
+
+
+def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type: ignore[override]
+    _PRE_V30_VALIDATE_BUILD_SAFETY(target, report)
+    wf = target / ".github/workflows/flutter-build.yml"
+    if not wf.exists():
+        return
+    try:
+        t = normalize_lf(wf.read_text(encoding="utf-8", errors="ignore"))
+    except OSError:
+        return
+
+    forbidden_patterns = [
+        ("./target/release/rustdesk-portable-packer.exe", "workflow ainda tenta mover rustdesk-portable-packer.exe; o binário atual é foxxdesk-portable-packer.exe"),
+        ("target/release/rustdesk-portable-packer.exe", "workflow ainda referencia rustdesk-portable-packer.exe; deve usar foxxdesk-portable-packer.exe"),
+        ("mv ./target/release/rustdesk.exe", "workflow ainda tenta mover rustdesk.exe; deve usar foxxdesk.exe"),
+        ("mv ./target/release/rustdesk ./Release/rustdesk", "workflow Linux/sciter ainda tenta mover rustdesk; deve usar foxxdesk"),
+        ("python3 ./generate.py -f ../../rustdesk/", "portable packer ainda usa pasta ../../rustdesk; deve usar ../../foxxdesk"),
+        ("path: rustdesk", "workflow ainda usa artifact path rustdesk; deve usar foxxdesk"),
+        ("path: ./rustdesk", "workflow ainda usa artifact path ./rustdesk; deve usar ./foxxdesk"),
+        ("rustdesk-unsigned-windows", "workflow ainda usa artifact name rustdesk-unsigned-windows; deve usar foxxdesk-unsigned-windows"),
+        ("./SignOutput/rustdesk-", "workflow ainda gera artefato SignOutput/rustdesk-*; deve gerar foxxdesk-*"),
+    ]
+    for needle, message in forbidden_patterns:
+        if needle in t:
+            report["pending"].append({"file": ".github/workflows/flutter-build.yml", "message": f"V30: {message}"})
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V29 patch-only, englobando todas as correções anteriores e corrigindo o ParserError PowerShell do driver no workflow.")
     p.add_argument("--target", default="./", help="Pasta raiz do projeto alvo. Padrão: ./")
@@ -3193,11 +3349,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--remove-old-renamed", action="store_true", help="Depois de copiar arquivos renomeados, remove os antigos. Use só após conferir o dry-run.")
     p.add_argument("--refresh-hbb-common", action="store_true", help="Força baixar novamente libs/hbb_common antes de aplicar o brand. Por padrão, baixa só se estiver ausente/incompleto.")
     p.add_argument("--skip-hbb-common-download", action="store_true", help="Não baixa libs/hbb_common automaticamente antes do brand, mesmo se estiver ausente.")
-    p.add_argument("--apply-icon-assets", action="store_true", help="V29: gera/atualiza os assets de ícone usando scripts/apply_foxxdesk_icon.py. Sem esta flag, só cria/atualiza o script helper.")
+    p.add_argument("--apply-icon-assets", action="store_true", help="V30: gera/atualiza os assets de ícone usando scripts/apply_foxxdesk_icon.py. Sem esta flag, só cria/atualiza o script helper.")
     p.add_argument("--icon-source", default="res/icon.png", help="Imagem fonte relativa ao projeto para gerar os ícones. Padrão: res/icon.png")
     p.add_argument("--icon-ios-background", default="#FFFFFF", help="Fundo usado para achatar ícones iOS/RGB. Padrão: #FFFFFF")
     p.add_argument("--icon-update-ios-contents", action="store_true", help="Também normaliza flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json")
-    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v29.log")
+    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v30.log")
     p.add_argument("--verbose", action="store_true", help="Ativa logging DEBUG no arquivo/console.")
     p.add_argument("--quiet", action="store_true", help="Não imprime logs no console; mantém log em arquivo.")
     return p.parse_args()
@@ -3266,7 +3422,7 @@ def main() -> int:
     ensure_generated_bridge_compat_helper(target, args, report, backup_root)
     ensure_executable_permissions(target, args, report, backup_root)
 
-    logging.info("Etapa: icon assets V29")
+    logging.info("Etapa: icon assets V30")
     run_icon_assets_v28(target, args, report)
 
     if args.apply and args.remove_old_renamed:

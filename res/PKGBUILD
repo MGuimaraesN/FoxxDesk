@@ -26,7 +26,7 @@ package() {
 	  mkdir -p "${pkgdir}/usr/share/foxxdesk" && cp -r ${HBB}/flutter/build/linux/x64/release/bundle/* -t "${pkgdir}/usr/share/foxxdesk"
   fi
   mkdir -p "${pkgdir}/usr/bin"
-  pushd ${pkgdir} && ln -s /usr/share/foxxdesk/rustdesk usr/bin/foxxdesk && popd
+  pushd ${pkgdir} && ln -s /usr/share/foxxdesk/foxxdesk usr/bin/foxxdesk && popd
   install -Dm 644 $HBB/res/foxxdesk.service -t "${pkgdir}/usr/share/foxxdesk/files"
   install -Dm 644 $HBB/res/foxxdesk.desktop -t "${pkgdir}/usr/share/foxxdesk/files"
   install -Dm 644 $HBB/res/foxxdesk-link.desktop -t "${pkgdir}/usr/share/foxxdesk/files"
