@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCRIPT_VERSION = "v30-fix-portable-packer-and-artifact-paths-2026-07-04"
+SCRIPT_VERSION = "v31-fix-macos-dmg-foxxdesk-app-path-2026-07-04"
 APP_DISPLAY_NAME = "FoxxDesk"
 APP_SLUG = "foxxdesk"
 APP_SLUG_UPPER = "FOXXDESK"
@@ -2941,7 +2941,7 @@ def run_icon_assets_v28(target: Path, args: argparse.Namespace, report: Dict[str
         logging.warning("Icon assets stderr:\n%s", completed.stderr.strip())
 
     if completed.returncode != 0:
-        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v30.log"})
+        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v31.log"})
         return
 
     changed_match = re.search(r"arquivos alterados:\s*(\d+)", completed.stdout or "")
@@ -3152,8 +3152,8 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
 
 
 def setup_logging_v28(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:  # type: ignore[override]
-    """V30: mantém flags de logging da V28, mas usa rebrand_v30.log por padrão."""
-    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v30.log"
+    """V30: mantém flags de logging da V28, mas usa rebrand_v31.log por padrão."""
+    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v31.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     level = logging.DEBUG if getattr(args, "verbose", False) else logging.INFO
     root_logger = logging.getLogger()
@@ -3331,8 +3331,99 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
             report["pending"].append({"file": ".github/workflows/flutter-build.yml", "message": f"V30: {message}"})
 
 
+
+# ---------------------------------------------------------------------------
+# V31: corrige DMG macOS ainda apontando para RustDesk.app.
+# O Flutter já gera FoxxDesk.app, então create-dmg/codesign precisam usar
+# ./flutter/build/macos/Build/Products/Release/FoxxDesk.app e ícone FoxxDesk.app.
+# ---------------------------------------------------------------------------
+_PRE_V31_PATCH_TEXT = patch_text
+_PRE_V31_VALIDATE_BUILD_SAFETY = validate_build_safety
+
+
+def patch_macos_dmg_app_bundle_paths_v31(rel: str, text: str, args: argparse.Namespace) -> str:
+    """Normaliza caminhos de bundle macOS em workflows/scripts de distribuição.
+
+    Corrige falhas como:
+      create-dmg --icon "RustDesk.app" ... Release/RustDesk.app
+    quando o build real do Flutter produziu Release/FoxxDesk.app.
+    """
+    if rel not in {".github/workflows/flutter-build.yml", ".github/workflows/playground.yml", "res/osx-dist.sh"}:
+        return text
+
+    text = normalize_lf(text)
+
+    # Nomes visíveis usados pelo create-dmg/Finder.
+    text = re.sub(r'--icon\s+["\'](?:RustDesk|rustdesk|FoxxDesk)\.app["\']', '--icon "FoxxDesk.app"', text)
+    text = re.sub(r'--hide-extension\s+["\'](?:RustDesk|rustdesk|FoxxDesk)\.app["\']', '--hide-extension "FoxxDesk.app"', text)
+
+    # Caminhos do bundle do Flutter/codesign/create-dmg.
+    text = text.replace('./flutter/build/macos/Build/Products/Release/RustDesk.app', './flutter/build/macos/Build/Products/Release/FoxxDesk.app')
+    text = text.replace('./flutter/build/macos/Build/Products/Release/rustdesk.app', './flutter/build/macos/Build/Products/Release/FoxxDesk.app')
+    text = text.replace('flutter/build/macos/Build/Products/Release/RustDesk.app', 'flutter/build/macos/Build/Products/Release/FoxxDesk.app')
+    text = text.replace('flutter/build/macos/Build/Products/Release/rustdesk.app', 'flutter/build/macos/Build/Products/Release/FoxxDesk.app')
+
+    # Fallback agressivo somente nos arquivos de workflow/distribuição: qualquer
+    # RustDesk.app literal aqui é caminho/label de pacote, não API upstream.
+    text = text.replace('"RustDesk.app"', '"FoxxDesk.app"')
+    text = text.replace("'RustDesk.app'", "'FoxxDesk.app'")
+    text = text.replace(' RustDesk.app', ' FoxxDesk.app')
+    text = text.replace('/RustDesk.app', '/FoxxDesk.app')
+
+    # Evita o create-dmg continuar tentando posicionar item antigo no AppleScript.
+    text = re.sub(
+        r'(?m)^(\s*create-dmg\b.*?)(?:RustDesk|rustdesk)\.app(.*)$',
+        lambda m: m.group(1) + 'FoxxDesk.app' + m.group(2).replace('RustDesk.app', 'FoxxDesk.app').replace('rustdesk.app', 'FoxxDesk.app'),
+        text,
+    )
+    return text
+
+
+def patch_text(rel: str, text: str, args: argparse.Namespace) -> str:  # type: ignore[override]
+    text = _PRE_V31_PATCH_TEXT(rel, text, args)
+    text = patch_macos_dmg_app_bundle_paths_v31(rel, text, args)
+    return text
+
+
+def _macos_dmg_bundle_path_risk_v31(target: Path) -> list[str]:
+    issues: list[str] = []
+    for rel in [".github/workflows/flutter-build.yml", ".github/workflows/playground.yml", "res/osx-dist.sh"]:
+        p = target / rel
+        if not p.exists():
+            continue
+        try:
+            t = normalize_lf(p.read_text(encoding="utf-8", errors="ignore"))
+        except OSError:
+            continue
+        if "RustDesk.app" in t or "rustdesk.app" in t:
+            issues.append(f"{rel}: ainda contém RustDesk.app/rustdesk.app; deve usar FoxxDesk.app")
+        if "create-dmg" in t and "Release/RustDesk.app" in t:
+            issues.append(f"{rel}: create-dmg ainda aponta para Release/RustDesk.app")
+        if "codesign" in t and "Release/RustDesk.app" in t:
+            issues.append(f"{rel}: codesign ainda aponta para Release/RustDesk.app")
+    return issues
+
+
+def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type: ignore[override]
+    _PRE_V31_VALIDATE_BUILD_SAFETY(target, report)
+    issues = _macos_dmg_bundle_path_risk_v31(target)
+    if issues:
+        for issue in issues:
+            rel, msg = issue.split(': ', 1)
+            report["pending"].append({"file": rel, "message": f"V31: {msg}"})
+    else:
+        # Remove falsos positivos antigos se a checagem V31 comprovou que os
+        # arquivos de DMG estão limpos.
+        report["pending"] = [
+            p for p in report["pending"]
+            if not (
+                p.get("file") in {".github/workflows/flutter-build.yml", ".github/workflows/playground.yml", "res/osx-dist.sh"}
+                and ("RustDesk.app" in str(p.get("message")) or "DMG" in str(p.get("message")) or "create-dmg" in str(p.get("message")))
+            )
+        ]
+
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V29 patch-only, englobando todas as correções anteriores e corrigindo o ParserError PowerShell do driver no workflow.")
+    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V31 patch-only, englobando todas as correções anteriores e corrigindo o DMG macOS para FoxxDesk.app.")
     p.add_argument("--target", default="./", help="Pasta raiz do projeto alvo. Padrão: ./")
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="Mostra o que seria alterado sem salvar arquivos do projeto, exceto relatório.")
@@ -3349,11 +3440,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--remove-old-renamed", action="store_true", help="Depois de copiar arquivos renomeados, remove os antigos. Use só após conferir o dry-run.")
     p.add_argument("--refresh-hbb-common", action="store_true", help="Força baixar novamente libs/hbb_common antes de aplicar o brand. Por padrão, baixa só se estiver ausente/incompleto.")
     p.add_argument("--skip-hbb-common-download", action="store_true", help="Não baixa libs/hbb_common automaticamente antes do brand, mesmo se estiver ausente.")
-    p.add_argument("--apply-icon-assets", action="store_true", help="V30: gera/atualiza os assets de ícone usando scripts/apply_foxxdesk_icon.py. Sem esta flag, só cria/atualiza o script helper.")
+    p.add_argument("--apply-icon-assets", action="store_true", help="V31: gera/atualiza os assets de ícone usando scripts/apply_foxxdesk_icon.py. Sem esta flag, só cria/atualiza o script helper.")
     p.add_argument("--icon-source", default="res/icon.png", help="Imagem fonte relativa ao projeto para gerar os ícones. Padrão: res/icon.png")
     p.add_argument("--icon-ios-background", default="#FFFFFF", help="Fundo usado para achatar ícones iOS/RGB. Padrão: #FFFFFF")
     p.add_argument("--icon-update-ios-contents", action="store_true", help="Também normaliza flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json")
-    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v30.log")
+    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v31.log")
     p.add_argument("--verbose", action="store_true", help="Ativa logging DEBUG no arquivo/console.")
     p.add_argument("--quiet", action="store_true", help="Não imprime logs no console; mantém log em arquivo.")
     return p.parse_args()
@@ -3422,7 +3513,7 @@ def main() -> int:
     ensure_generated_bridge_compat_helper(target, args, report, backup_root)
     ensure_executable_permissions(target, args, report, backup_root)
 
-    logging.info("Etapa: icon assets V30")
+    logging.info("Etapa: icon assets V31")
     run_icon_assets_v28(target, args, report)
 
     if args.apply and args.remove_old_renamed:

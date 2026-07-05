@@ -1,10 +1,10 @@
 # Relatório de rebrand FoxxDesk
 
-- Data/hora: `2026-07-04 19:55:31`
+- Data/hora: `2026-07-05 10:56:33`
 - Modo: `apply`
 - Projeto alvo: `/home/mateus/_Projects/FoxxDesk`
 - Script: `apply_foxxdesk_rebrand_all_files_no_zip_v27.py`
-- Versão do script: `v30-fix-portable-packer-and-artifact-paths-2026-07-04`
+- Versão do script: `v31-fix-macos-dmg-foxxdesk-app-path-2026-07-04`
 - Payload/ZIP/manifesto externo: `não`
 - Espelhamento/substituição de arquivo inteiro por referência antiga: `não`
 - Perfil: `full`
@@ -16,30 +16,26 @@
 - server: `foxxdesk.mguimaraesn.dev`
 - relay: `foxxdesk.mguimaraesn.dev`
 - key: `<key ocultada; len=44; sha256=a58bc137d7>`
-- maintainer-email: `mateus@mguimaraesn.dev`
+- maintainer-email: `(não informado)`
 - homepage: `https://foxxdesk.mguimaraesn.dev`
 
 ## Resumo
 
 - Arquivos permitidos na allowlist: `269`
 - Arquivos analisados: `288`
-- Arquivos alterados: `6`
-- Arquivos já aplicados/sem mudança: `275`
+- Arquivos alterados: `2`
+- Arquivos já aplicados/sem mudança: `278`
 - Arquivos esperados não encontrados: `0`
-- Arquivos ignorados: `8`
+- Arquivos ignorados: `9`
 - Renomeações/cópias criadas: `0`
-- Pendências: `0`
-- Backup: `/home/mateus/_Projects/FoxxDesk/.rebrand_backup/20260704_195520`
-- Log detalhado: `/home/mateus/_Projects/FoxxDesk/rebrand_v30.log`
+- Pendências: `2`
+- Backup: `/home/mateus/_Projects/FoxxDesk/.rebrand_backup/20260705_105623`
+- Log detalhado: `/home/mateus/_Projects/FoxxDesk/rebrand_v31.log`
 
 ## Arquivos alterados
 
 - `.github/workflows/flutter-build.yml`
-- `libs/hbb_common/src/platform/linux.rs`
-- `res/DEBIAN/postinst`
-- `res/PKGBUILD`
-- `res/rpm-flutter-suse.spec`
-- `res/rpm-flutter.spec`
+- `.github/workflows/playground.yml`
 
 ## Arquivos renomeados/copiados
 
@@ -55,6 +51,7 @@ Nenhum.
 - `FOXXDESK_MAX_SAFE_BRAND_REPORT.md (opcional ausente)`
 - `FOXXDESK_SERVER_DEFAULTS.md (opcional ausente)`
 - `NOTICE.md (opcional ausente)`
+- `icon assets (flag --apply-icon-assets não informada)`
 - `scripts/apply_foxxdesk_brand.py (opcional ausente)`
 - `scripts/apply_foxxdesk_brand_DEFINITIVE.py (opcional ausente)`
 - `scripts/apply_foxxdesk_brand_SAFE.py (opcional ausente)`
@@ -64,13 +61,10 @@ Nenhum.
 
 | Status | Arquivo | Linha | Ação | Mensagem |
 |---|---|---:|---|---|
-| alterado | `.github/workflows/flutter-build.yml` | 259 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
-| alterado | `libs/hbb_common/src/platform/linux.rs` | 31 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
-| alterado | `res/DEBIAN/postinst` | 8 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
-| alterado | `res/PKGBUILD` | 29 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
-| alterado | `res/rpm-flutter-suse.spec` | 62 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
-| alterado | `res/rpm-flutter.spec` | 62 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
+| alterado | `.github/workflows/flutter-build.yml` | 843 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
+| alterado | `.github/workflows/playground.yml` | 201 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
 
 ## Pendências
 
-Nenhuma.
+- `.github/workflows/flutter-build.yml`: V31: ainda contém RustDesk.app/rustdesk.app; deve usar FoxxDesk.app
+- `.github/workflows/playground.yml`: V31: ainda contém RustDesk.app/rustdesk.app; deve usar FoxxDesk.app
