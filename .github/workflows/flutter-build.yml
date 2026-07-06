@@ -867,12 +867,33 @@ jobs:
           # notarize the foxxdesk-${{ env.VERSION }}.dmg
           rcodesign notary-submit --api-key-path ${{ github.workspace }}/rustdesk.json  --staple foxxdesk-${{ env.VERSION }}.dmg
 
-      - name: Rename rustdesk
+      - name: Normalize FoxxDesk DMG artifact name
         if: env.UPLOAD_ARTIFACT == 'true'
+        shell: bash
         run: |
-          for name in rustdesk*??.dmg; do
-              mv "$name" "${name%%.dmg}-${{ matrix.job.arch }}.dmg"
+          set -euo pipefail
+          shopt -s nullglob
+          dmg_files=(foxxdesk*.dmg)
+          if [ ${#dmg_files[@]} -eq 0 ]; then
+              echo "No foxxdesk DMG found before publish. Current directory:"
+              pwd
+              ls -la
+              exit 1
+          fi
+          for name in "${dmg_files[@]}"; do
+              case "$name" in
+                  *-${{ matrix.job.arch }}.dmg)
+                      echo "DMG already has arch suffix: $name"
+                      ;;
+                  *)
+                      target="${name%.dmg}-${{ matrix.job.arch }}.dmg"
+                      echo "Renaming $name -> $target"
+                      mv "$name" "$target"
+                      ;;
+              esac
           done
+          echo "DMG files ready for publish:"
+          ls -la foxxdesk*-${{ matrix.job.arch }}.dmg
 
       - name: Publish DMG package
         if: env.UPLOAD_ARTIFACT == 'true'
@@ -881,7 +902,7 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            rustdesk*-${{ matrix.job.arch }}.dmg
+            foxxdesk*-${{ matrix.job.arch }}.dmg
 
   publish_unsigned:
     needs:

@@ -218,11 +218,33 @@ jobs:
           # notarize the rustdesk-${{ env.VERSION }}.dmg
           rcodesign notary-submit --api-key-path ${{ github.workspace }}/rustdesk.json  --staple rustdesk-${{ env.VERSION }}.dmg
 
-      - name: Rename rustdesk
+      - name: Normalize FoxxDesk DMG artifact name
+        if: env.UPLOAD_ARTIFACT == 'true'
+        shell: bash
         run: |
-          for name in rustdesk*??.dmg; do
-              mv "$name" "${name%%.dmg}-${{ matrix.job.arch }}-flutter${{ matrix.job.flutter }}-flutter${{ matrix.job.date }}.dmg"
+          set -euo pipefail
+          shopt -s nullglob
+          dmg_files=(foxxdesk*.dmg)
+          if [ ${#dmg_files[@]} -eq 0 ]; then
+              echo "No foxxdesk DMG found before publish. Current directory:"
+              pwd
+              ls -la
+              exit 1
+          fi
+          for name in "${dmg_files[@]}"; do
+              case "$name" in
+                  *-${{ matrix.job.arch }}.dmg)
+                      echo "DMG already has arch suffix: $name"
+                      ;;
+                  *)
+                      target="${name%.dmg}-${{ matrix.job.arch }}.dmg"
+                      echo "Renaming $name -> $target"
+                      mv "$name" "$target"
+                      ;;
+              esac
           done
+          echo "DMG files ready for publish:"
+          ls -la foxxdesk*-${{ matrix.job.arch }}.dmg
 
       - name: Publish DMG package
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1

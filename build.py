@@ -337,7 +337,7 @@ def build_flutter_deb(version, features):
     system2('mkdir -p tmpdeb/usr/share/icons/hicolor/scalable/apps/')
     system2('mkdir -p tmpdeb/usr/share/applications/')
     system2('mkdir -p tmpdeb/usr/share/polkit-1/actions')
-    system2('rm tmpdeb/usr/bin/foxxdesk || true')
+    system2('rm -f tmpdeb/usr/bin/foxxdesk')
     system2(
         f'cp -r {flutter_build_dir}/* tmpdeb/usr/share/foxxdesk/')
     system2(
@@ -362,6 +362,7 @@ def build_flutter_deb(version, features):
     system2('mkdir -p tmpdeb/DEBIAN')
     generate_control_file(version)
     system2('cp -a ../res/DEBIAN/* tmpdeb/DEBIAN/')
+    system2('chmod 755 tmpdeb/DEBIAN/preinst tmpdeb/DEBIAN/postinst tmpdeb/DEBIAN/prerm tmpdeb/DEBIAN/postrm 2>/dev/null || true')
     md5_file_folder("tmpdeb/")
     system2('dpkg-deb -b tmpdeb foxxdesk.deb;')
 
@@ -380,7 +381,7 @@ def build_deb_from_folder(version, binary_folder):
     system2('mkdir -p tmpdeb/usr/share/icons/hicolor/scalable/apps/')
     system2('mkdir -p tmpdeb/usr/share/applications/')
     system2('mkdir -p tmpdeb/usr/share/polkit-1/actions')
-    system2('rm tmpdeb/usr/bin/foxxdesk || true')
+    system2('rm -f tmpdeb/usr/bin/foxxdesk')
     system2(
         f'cp -r ../{binary_folder}/* tmpdeb/usr/share/foxxdesk/')
     system2(
@@ -399,6 +400,7 @@ def build_deb_from_folder(version, binary_folder):
     system2('mkdir -p tmpdeb/DEBIAN')
     generate_control_file(version)
     system2('cp -a ../res/DEBIAN/* tmpdeb/DEBIAN/')
+    system2('chmod 755 tmpdeb/DEBIAN/preinst tmpdeb/DEBIAN/postinst tmpdeb/DEBIAN/prerm tmpdeb/DEBIAN/postrm 2>/dev/null || true')
     md5_file_folder("tmpdeb/")
     system2('dpkg-deb -b tmpdeb foxxdesk.deb;')
 
@@ -633,13 +635,15 @@ def main():
                 os.system('mkdir -p tmpdeb/etc/X11/foxxdesk/')
                 os.system('cp res/xorg.conf tmpdeb/etc/X11/foxxdesk/')
                 os.system('cp -a DEBIAN/* tmpdeb/DEBIAN/')
+                os.system('chmod 755 tmpdeb/DEBIAN/preinst tmpdeb/DEBIAN/postinst tmpdeb/DEBIAN/prerm tmpdeb/DEBIAN/postrm 2>/dev/null || true')
                 os.system('mkdir -p tmpdeb/etc/pam.d/')
                 os.system('cp pam.d/foxxdesk.debian tmpdeb/etc/pam.d/foxxdesk')
-                system2('strip tmpdeb/usr/bin/foxxdesk')
+                system2('[ -f tmpdeb/usr/bin/foxxdesk ] && strip tmpdeb/usr/bin/foxxdesk || true')
                 system2('mkdir -p tmpdeb/usr/share/foxxdesk')
-                system2('mv tmpdeb/usr/bin/foxxdesk tmpdeb/usr/share/foxxdesk/')
+                system2('[ -f tmpdeb/usr/bin/foxxdesk ] && mv tmpdeb/usr/bin/foxxdesk tmpdeb/usr/share/foxxdesk/ || true')
                 system2('cp libsciter-gtk.so tmpdeb/usr/share/foxxdesk/')
                 md5_file_folder("tmpdeb/")
+                system2('chmod 755 tmpdeb/DEBIAN/preinst tmpdeb/DEBIAN/postinst tmpdeb/DEBIAN/prerm tmpdeb/DEBIAN/postrm 2>/dev/null || true')
                 system2('dpkg-deb -b tmpdeb foxxdesk.deb; /bin/rm -rf tmpdeb/')
                 os.rename('foxxdesk.deb', 'foxxdesk-%s.deb' % version)
 

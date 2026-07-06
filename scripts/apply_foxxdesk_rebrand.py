@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCRIPT_VERSION = "v31-fix-macos-dmg-foxxdesk-app-path-2026-07-04"
+SCRIPT_VERSION = "v32-macos-dmg-rename-and-linux-deb-permissions-2026-07-05"
 APP_DISPLAY_NAME = "FoxxDesk"
 APP_SLUG = "foxxdesk"
 APP_SLUG_UPPER = "FOXXDESK"
@@ -2941,7 +2941,7 @@ def run_icon_assets_v28(target: Path, args: argparse.Namespace, report: Dict[str
         logging.warning("Icon assets stderr:\n%s", completed.stderr.strip())
 
     if completed.returncode != 0:
-        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v31.log"})
+        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v32.log"})
         return
 
     changed_match = re.search(r"arquivos alterados:\s*(\d+)", completed.stdout or "")
@@ -3152,8 +3152,8 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
 
 
 def setup_logging_v28(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:  # type: ignore[override]
-    """V30: mantém flags de logging da V28, mas usa rebrand_v31.log por padrão."""
-    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v31.log"
+    """V30: mantém flags de logging da V28, mas usa rebrand_v32.log por padrão."""
+    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v32.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     level = logging.DEBUG if getattr(args, "verbose", False) else logging.INFO
     root_logger = logging.getLogger()
@@ -3422,8 +3422,243 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
             )
         ]
 
+
+# ---------------------------------------------------------------------------
+# V32: corrige renomeação/publicação DMG macOS e permissões do pacote DEB.
+# Logs 77679095458:
+# - macOS: `for name in rustdesk*??.dmg`/glob sem match causava `mv: rename ... No such file`.
+# - Linux: `dpkg-deb` recusava `preinst` com permissão 644.
+# - Linux: `rm tmpdeb/usr/bin/foxxdesk` poluía log quando o binário não existia.
+# ---------------------------------------------------------------------------
+_PRE_V32_PATCH_TEXT = patch_text
+_PRE_V32_VALIDATE_BUILD_SAFETY = validate_build_safety
+
+# Garante que o apply também marque os maintainer scripts DEB como 100755 no Git.
+EXECUTABLE_FILES.update({
+    "res/DEBIAN/preinst",
+    "res/DEBIAN/postinst",
+    "res/DEBIAN/prerm",
+    "res/DEBIAN/postrm",
+})
+
+
+def _v32_macos_dmg_normalize_step() -> str:
+    return '''      - name: Normalize FoxxDesk DMG artifact name
+        if: env.UPLOAD_ARTIFACT == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmg_files=(foxxdesk*.dmg)
+          if [ ${#dmg_files[@]} -eq 0 ]; then
+              echo "No foxxdesk DMG found before publish. Current directory:"
+              pwd
+              ls -la
+              exit 1
+          fi
+          for name in "${dmg_files[@]}"; do
+              case "$name" in
+                  *-${{ matrix.job.arch }}.dmg)
+                      echo "DMG already has arch suffix: $name"
+                      ;;
+                  *)
+                      target="${name%.dmg}-${{ matrix.job.arch }}.dmg"
+                      echo "Renaming $name -> $target"
+                      mv "$name" "$target"
+                      ;;
+              esac
+          done
+          echo "DMG files ready for publish:"
+          ls -la foxxdesk*-${{ matrix.job.arch }}.dmg
+
+'''
+
+
+def patch_macos_dmg_publish_rename_v32(rel: str, text: str, args: argparse.Namespace) -> str:
+    # Substitui o passo frágil de rename do DMG por bloco idempotente.
+    if rel not in {".github/workflows/flutter-build.yml", ".github/workflows/playground.yml", "res/osx-dist.sh"}:
+        return text
+    text = normalize_lf(text)
+    step = _v32_macos_dmg_normalize_step()
+
+    # Método linha-a-linha para evitar regex pesado em workflows grandes.
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    i = 0
+    replaced = False
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("      - name: Rename ") and ("rustdesk" in line.lower() or "foxxdesk" in line.lower()):
+            j = i + 1
+            while j < len(lines) and not lines[j].startswith("      - name: Publish DMG package"):
+                j += 1
+            if j < len(lines):
+                out.append(step)
+                i = j
+                replaced = True
+                continue
+        out.append(line)
+        i += 1
+    text = "".join(out)
+
+    if "Publish DMG package" in text and "Normalize FoxxDesk DMG artifact name" not in text:
+        text = text.replace("      - name: Publish DMG package", step + "      - name: Publish DMG package", 1)
+
+    # Corrige qualquer miolo antigo que tenha sobrado, sem regex multiline custoso.
+    text = text.replace("for name in rustdesk*??.dmg; do", "for name in foxxdesk*??.dmg; do")
+    if "for name in foxxdesk*??.dmg; do" in text:
+        lines = text.splitlines(keepends=True)
+        out = []
+        i = 0
+        while i < len(lines):
+            if "for name in foxxdesk*??.dmg; do" in lines[i]:
+                indent = lines[i][: len(lines[i]) - len(lines[i].lstrip())]
+                out.append(indent + "set -euo pipefail\n")
+                out.append(indent + "shopt -s nullglob\n")
+                out.append(indent + "dmg_files=(foxxdesk*.dmg)\n")
+                out.append(indent + "if [ ${#dmg_files[@]} -eq 0 ]; then\n")
+                out.append(indent + "    echo \"No foxxdesk DMG found before publish.\"\n")
+                out.append(indent + "    ls -la *.dmg 2>/dev/null || true\n")
+                out.append(indent + "    exit 1\n")
+                out.append(indent + "fi\n")
+                out.append(indent + "for name in \"${dmg_files[@]}\"; do\n")
+                out.append(indent + "    case \"$name\" in\n")
+                out.append(indent + "        *-${{ matrix.job.arch }}.dmg) echo \"DMG already has arch suffix: $name\" ;;\n")
+                out.append(indent + "        *) mv \"$name\" \"${name%.dmg}-${{ matrix.job.arch }}.dmg\" ;;\n")
+                out.append(indent + "    esac\n")
+                out.append(indent + "done\n")
+                i += 1
+                while i < len(lines) and not lines[i].lstrip().startswith("done"):
+                    i += 1
+                if i < len(lines):
+                    i += 1
+                continue
+            out.append(lines[i])
+            i += 1
+        text = "".join(out)
+
+    text = text.replace('rustdesk*-${{ matrix.job.arch }}.dmg', 'foxxdesk*-${{ matrix.job.arch }}.dmg')
+    text = text.replace('rustdesk*.dmg', 'foxxdesk*.dmg')
+    return text
+
+def _v32_debian_chmod_command() -> str:
+    return "chmod 755 tmpdeb/DEBIAN/preinst tmpdeb/DEBIAN/postinst tmpdeb/DEBIAN/prerm tmpdeb/DEBIAN/postrm 2>/dev/null || true"
+
+
+def patch_linux_deb_packaging_v32(rel: str, text: str, args: argparse.Namespace) -> str:
+    # Corrige empacotamento Linux/DEB que quebrou no log.
+    if rel != "build.py":
+        return text
+    text = normalize_lf(text)
+
+    text = text.replace("system2('rm tmpdeb/usr/bin/foxxdesk || true')", "system2('rm -f tmpdeb/usr/bin/foxxdesk')")
+    text = text.replace('system2("rm tmpdeb/usr/bin/foxxdesk || true")', 'system2("rm -f tmpdeb/usr/bin/foxxdesk")')
+
+    chmod_cmd = _v32_debian_chmod_command()
+    text = text.replace(
+        "system2('cp -a ../res/DEBIAN/* tmpdeb/DEBIAN/')\n    md5_file_folder(\"tmpdeb/\")",
+        "system2('cp -a ../res/DEBIAN/* tmpdeb/DEBIAN/')\n    system2('" + chmod_cmd + "')\n    md5_file_folder(\"tmpdeb/\")",
+    )
+    text = text.replace(
+        "os.system('cp -a DEBIAN/* tmpdeb/DEBIAN/')\n                os.system('mkdir -p tmpdeb/etc/pam.d/')",
+        "os.system('cp -a DEBIAN/* tmpdeb/DEBIAN/')\n                os.system('" + chmod_cmd + "')\n                os.system('mkdir -p tmpdeb/etc/pam.d/')",
+    )
+    text = text.replace(
+        "md5_file_folder(\"tmpdeb/\")\n    system2('dpkg-deb -b tmpdeb foxxdesk.deb;')",
+        "md5_file_folder(\"tmpdeb/\")\n    system2('" + chmod_cmd + "')\n    system2('dpkg-deb -b tmpdeb foxxdesk.deb;')",
+    )
+    text = text.replace(
+        "md5_file_folder(\"tmpdeb/\")\n                system2('dpkg-deb -b tmpdeb foxxdesk.deb; /bin/rm -rf tmpdeb/')",
+        "md5_file_folder(\"tmpdeb/\")\n                system2('" + chmod_cmd + "')\n                system2('dpkg-deb -b tmpdeb foxxdesk.deb; /bin/rm -rf tmpdeb/')",
+    )
+    text = text.replace(
+        "system2('strip tmpdeb/usr/bin/foxxdesk')",
+        "system2('[ -f tmpdeb/usr/bin/foxxdesk ] && strip tmpdeb/usr/bin/foxxdesk || true')",
+    )
+    text = text.replace(
+        "system2('mv tmpdeb/usr/bin/foxxdesk tmpdeb/usr/share/foxxdesk/')",
+        "system2('[ -f tmpdeb/usr/bin/foxxdesk ] && mv tmpdeb/usr/bin/foxxdesk tmpdeb/usr/share/foxxdesk/ || true')",
+    )
+    text = re.sub(r"(system2\('" + re.escape(chmod_cmd) + r"'\)\n)(?:\s*system2\('" + re.escape(chmod_cmd) + r"'\)\n)+", r"\1", text)
+    # Evita chmod duplicado antes e depois de md5_file_folder no mesmo bloco.
+    text = text.replace(
+        "system2('" + chmod_cmd + "')\n    md5_file_folder(\"tmpdeb/\")\n    system2('" + chmod_cmd + "')",
+        "system2('" + chmod_cmd + "')\n    md5_file_folder(\"tmpdeb/\")",
+    )
+    text = text.replace(
+        "system2('" + chmod_cmd + "')\n                md5_file_folder(\"tmpdeb/\")\n                system2('" + chmod_cmd + "')",
+        "system2('" + chmod_cmd + "')\n                md5_file_folder(\"tmpdeb/\")",
+    )
+    return text
+
+
+def patch_text(rel: str, text: str, args: argparse.Namespace) -> str:  # type: ignore[override]
+    text = _PRE_V32_PATCH_TEXT(rel, text, args)
+    text = patch_macos_dmg_publish_rename_v32(rel, text, args)
+    text = patch_linux_deb_packaging_v32(rel, text, args)
+    return text
+
+
+def _v32_risks(target: Path) -> list[tuple[str, str]]:
+    issues: list[tuple[str, str]] = []
+    for rel in [".github/workflows/flutter-build.yml", ".github/workflows/playground.yml", "res/osx-dist.sh"]:
+        p = target / rel
+        if not p.exists():
+            continue
+        try:
+            t = normalize_lf(p.read_text(encoding="utf-8", errors="ignore"))
+        except OSError:
+            continue
+        if 'for name in rustdesk*??.dmg' in t:
+            issues.append((rel, 'V32: ainda existe loop frágil `for name in rustdesk*??.dmg`; deve usar Normalize FoxxDesk DMG artifact name'))
+        if 'for name in foxxdesk*??.dmg' in t:
+            issues.append((rel, 'V32: ainda existe loop frágil `for name in foxxdesk*??.dmg`; deve usar nullglob/array e ignorar DMG já com arquitetura'))
+        if 'rustdesk*-${{ matrix.job.arch }}.dmg' in t:
+            issues.append((rel, 'V32: publish ainda procura rustdesk*.dmg; deve procurar foxxdesk*.dmg'))
+        if 'Normalize FoxxDesk DMG artifact name' not in t and 'Publish DMG package' in t:
+            issues.append((rel, 'V32: workflow publica DMG sem etapa robusta de normalização do nome'))
+
+    bp = target / 'build.py'
+    if bp.exists():
+        try:
+            b = normalize_lf(bp.read_text(encoding='utf-8', errors='ignore'))
+        except OSError:
+            b = ''
+        if "rm tmpdeb/usr/bin/foxxdesk || true" in b:
+            issues.append(('build.py', 'V32: build.py ainda usa rm sem -f para tmpdeb/usr/bin/foxxdesk'))
+        if _v32_debian_chmod_command() not in b:
+            issues.append(('build.py', 'V32: build.py ainda não força chmod 755 nos scripts DEBIAN antes do dpkg-deb'))
+        if "system2('strip tmpdeb/usr/bin/foxxdesk')" in b or "system2('mv tmpdeb/usr/bin/foxxdesk tmpdeb/usr/share/foxxdesk/')" in b:
+            issues.append(('build.py', 'V32: strip/mv do binário DEB ainda não está protegido por teste -f'))
+
+    for rel in ['res/DEBIAN/preinst', 'res/DEBIAN/postinst', 'res/DEBIAN/prerm', 'res/DEBIAN/postrm']:
+        p = target / rel
+        if p.exists():
+            try:
+                if p.stat().st_mode & 0o111 == 0:
+                    issues.append((rel, 'V32: maintainer script DEBIAN ainda não está executável no filesystem; rode apply e git add para registrar modo 100755'))
+            except OSError:
+                pass
+    return issues
+
+
+def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type: ignore[override]
+    _PRE_V32_VALIDATE_BUILD_SAFETY(target, report)
+    issues = _v32_risks(target)
+    if issues:
+        for rel, msg in issues:
+            report['pending'].append({'file': rel, 'message': msg})
+    else:
+        report['pending'] = [
+            p for p in report['pending']
+            if not (
+                (p.get('file') in {'.github/workflows/flutter-build.yml', '.github/workflows/playground.yml', 'res/osx-dist.sh'} and ('dmg' in str(p.get('message')).lower() or 'DMG' in str(p.get('message')) or 'rustdesk*??.dmg' in str(p.get('message'))))
+                or (p.get('file') == 'build.py' and ('preinst' in str(p.get('message')) or 'dpkg' in str(p.get('message')) or 'tmpdeb/usr/bin/foxxdesk' in str(p.get('message'))))
+            )
+        ]
+
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V31 patch-only, englobando todas as correções anteriores e corrigindo o DMG macOS para FoxxDesk.app.")
+    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V32 patch-only, englobando todas as correções anteriores e corrigindo rename/publicação DMG macOS e permissões DEB Linux.")
     p.add_argument("--target", default="./", help="Pasta raiz do projeto alvo. Padrão: ./")
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="Mostra o que seria alterado sem salvar arquivos do projeto, exceto relatório.")
@@ -3440,11 +3675,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--remove-old-renamed", action="store_true", help="Depois de copiar arquivos renomeados, remove os antigos. Use só após conferir o dry-run.")
     p.add_argument("--refresh-hbb-common", action="store_true", help="Força baixar novamente libs/hbb_common antes de aplicar o brand. Por padrão, baixa só se estiver ausente/incompleto.")
     p.add_argument("--skip-hbb-common-download", action="store_true", help="Não baixa libs/hbb_common automaticamente antes do brand, mesmo se estiver ausente.")
-    p.add_argument("--apply-icon-assets", action="store_true", help="V31: gera/atualiza os assets de ícone usando scripts/apply_foxxdesk_icon.py. Sem esta flag, só cria/atualiza o script helper.")
+    p.add_argument("--apply-icon-assets", action="store_true", help="V32: gera/atualiza os assets de ícone usando scripts/apply_foxxdesk_icon.py. Sem esta flag, só cria/atualiza o script helper.")
     p.add_argument("--icon-source", default="res/icon.png", help="Imagem fonte relativa ao projeto para gerar os ícones. Padrão: res/icon.png")
     p.add_argument("--icon-ios-background", default="#FFFFFF", help="Fundo usado para achatar ícones iOS/RGB. Padrão: #FFFFFF")
     p.add_argument("--icon-update-ios-contents", action="store_true", help="Também normaliza flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json")
-    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v31.log")
+    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v32.log")
     p.add_argument("--verbose", action="store_true", help="Ativa logging DEBUG no arquivo/console.")
     p.add_argument("--quiet", action="store_true", help="Não imprime logs no console; mantém log em arquivo.")
     return p.parse_args()
@@ -3513,7 +3748,7 @@ def main() -> int:
     ensure_generated_bridge_compat_helper(target, args, report, backup_root)
     ensure_executable_permissions(target, args, report, backup_root)
 
-    logging.info("Etapa: icon assets V31")
+    logging.info("Etapa: icon assets V32")
     run_icon_assets_v28(target, args, report)
 
     if args.apply and args.remove_old_renamed:
