@@ -2060,7 +2060,6 @@ jobs:
           path: foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-sciter.deb
 
   build-appimage:
-    if: false
     name: Build appimage ${{ matrix.job.target }}
     needs: [build-rustdesk-linux]
     runs-on: ubuntu-22.04
@@ -2111,7 +2110,6 @@ jobs:
             ./appimage/foxxdesk-${{ env.VERSION }}-*.AppImage
 
   build-flatpak:
-    if: false
     name: Build flatpak ${{ matrix.job.target }}${{ matrix.job.suffix }}
     needs:
       - build-rustdesk-linux
@@ -2197,7 +2195,7 @@ jobs:
             flatpak/foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.flatpak
 
   build-rustdesk-web:
-    if: true
+    if: False
     name: build-rustdesk-web
     runs-on: ubuntu-22.04
     permissions:
