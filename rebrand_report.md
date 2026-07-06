@@ -1,10 +1,10 @@
 # Relatório de rebrand FoxxDesk
 
-- Data/hora: `2026-07-06 08:54:10`
+- Data/hora: `2026-07-06 10:57:10`
 - Modo: `apply`
 - Projeto alvo: `/home/mateus/_Projects/FoxxDesk`
 - Script: `apply_foxxdesk_rebrand_all_files_no_zip_v27.py`
-- Versão do script: `v32-macos-dmg-rename-and-linux-deb-permissions-2026-07-05`
+- Versão do script: `v34-final-macos-app-bundle-cleanup-2026-07-06`
 - Payload/ZIP/manifesto externo: `não`
 - Espelhamento/substituição de arquivo inteiro por referência antiga: `não`
 - Perfil: `full`
@@ -23,24 +23,19 @@
 
 - Arquivos permitidos na allowlist: `269`
 - Arquivos analisados: `288`
-- Arquivos alterados: `7`
+- Arquivos alterados: `2`
 - Arquivos já aplicados/sem mudança: `278`
 - Arquivos esperados não encontrados: `0`
 - Arquivos ignorados: `9`
 - Renomeações/cópias criadas: `0`
-- Pendências: `2`
-- Backup: `/home/mateus/_Projects/FoxxDesk/.rebrand_backup/20260706_085408`
-- Log detalhado: `/home/mateus/_Projects/FoxxDesk/rebrand_v32.log`
+- Pendências: `0`
+- Backup: `/home/mateus/_Projects/FoxxDesk/.rebrand_backup/20260706_105709`
+- Log detalhado: `/home/mateus/_Projects/FoxxDesk/rebrand_v34.log`
 
 ## Arquivos alterados
 
 - `.github/workflows/flutter-build.yml`
 - `.github/workflows/playground.yml`
-- `build.py`
-- `res/DEBIAN/postinst`
-- `res/DEBIAN/postrm`
-- `res/DEBIAN/preinst`
-- `res/DEBIAN/prerm`
 
 ## Arquivos renomeados/copiados
 
@@ -66,15 +61,9 @@ Nenhum.
 
 | Status | Arquivo | Linha | Ação | Mensagem |
 |---|---|---:|---|---|
-| alterado | `.github/workflows/flutter-build.yml` | 870 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
-| alterado | `.github/workflows/playground.yml` | 221 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
-| alterado | `build.py` | 340 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
-| chmod +x | `res/DEBIAN/postinst` | 1 | garantir bit executável no Git/CI | marca como executável; rode git add para registrar modo 100755 |
-| chmod +x | `res/DEBIAN/postrm` | 1 | garantir bit executável no Git/CI | marca como executável; rode git add para registrar modo 100755 |
-| chmod +x | `res/DEBIAN/preinst` | 1 | garantir bit executável no Git/CI | marca como executável; rode git add para registrar modo 100755 |
-| chmod +x | `res/DEBIAN/prerm` | 1 | garantir bit executável no Git/CI | marca como executável; rode git add para registrar modo 100755 |
+| alterado | `.github/workflows/flutter-build.yml` | 862 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
+| alterado | `.github/workflows/playground.yml` | 213 | aplicar regras standalone de rebrand | conteúdo textual mudou por regra segura; sem payload/ZIP |
 
 ## Pendências
 
-- `.github/workflows/flutter-build.yml`: V31: ainda contém RustDesk.app/rustdesk.app; deve usar FoxxDesk.app
-- `.github/workflows/playground.yml`: V31: ainda contém RustDesk.app/rustdesk.app; deve usar FoxxDesk.app
+Nenhuma.

@@ -859,7 +859,7 @@ jobs:
           # Unlock keychain
           security default-keychain -s rustdesk.keychain
           security unlock-keychain -p ${{ secrets.MACOS_P12_PASSWORD }} rustdesk.keychain
-          # start sign the rustdesk.app and dmg
+          # start sign the FoxxDesk.app and dmg
           rm -rf *.dmg || true
           codesign --force --options runtime -s ${{ secrets.MACOS_CODESIGN_IDENTITY }} --deep --strict ./flutter/build/macos/Build/Products/Release/FoxxDesk.app -vvv
           create-dmg --icon "FoxxDesk.app" 200 190 --hide-extension "FoxxDesk.app" --window-size 800 400 --app-drop-link 600 185 foxxdesk-${{ env.VERSION }}.dmg ./flutter/build/macos/Build/Products/Release/FoxxDesk.app
@@ -1683,8 +1683,29 @@ jobs:
             export CARGO_INCREMENTAL=0
             export DEB_ARCH=${{ matrix.job.deb_arch }}
             python3 ./build.py --flutter --skip-cargo
-            for name in foxxdesk*??.deb; do
-              mv "$name" "${name%%.deb}-${{ matrix.job.arch }}.deb"
+            # V33: robust DEB artifact collection. Avoid fragile rustdesk/foxxdesk globs.
+            mkdir -p /workspace
+            echo "DEB files before arch suffix:"
+            find /workspace -maxdepth 1 -type f \( -name "foxxdesk*.deb" -o -name "rustdesk*.deb" \) -print | sort || true
+            mapfile -t deb_files < <(find /workspace -maxdepth 1 -type f \( -name "foxxdesk*.deb" -o -name "rustdesk*.deb" \) -print | sort)
+            if [ "${#deb_files[@]}" -eq 0 ]; then
+              echo "No FoxxDesk/RustDesk DEB artifact found in /workspace after build.py"
+              ls -lah /workspace || true
+              exit 1
+            fi
+            for deb_file in "${deb_files[@]}"; do
+              name="$(basename "$deb_file")"
+              case "$name" in
+                rustdesk-*) name="foxxdesk-${name#rustdesk-}" ;;
+              esac
+              case "$name" in
+                *-${{ matrix.job.arch }}.deb) target="/workspace/$name" ;;
+                *) target="/workspace/${name%.deb}-${{ matrix.job.arch }}.deb" ;;
+              esac
+              if [ "$deb_file" != "$target" ]; then
+                mv -f "$deb_file" "$target"
+              fi
+              echo "DEB artifact ready: $target"
             done
 
             # rpm package
@@ -1696,9 +1717,26 @@ jobs:
                 ;;
             esac
             HBB=`pwd` rpmbuild ./res/rpm-flutter.spec -bb
-            pushd ~/rpmbuild/RPMS/${{ matrix.job.arch }}
-            for name in rustdesk*??.rpm; do
-                mv "$name" /workspace/"${name%%.rpm}.rpm"
+            # V33: robust RPM artifact collection. Avoid fragile rustdesk/foxxdesk globs.
+            rpm_dir="$HOME/rpmbuild/RPMS/${{ matrix.job.arch }}"
+            mkdir -p /workspace
+            echo "RPM output directory: $rpm_dir"
+            ls -lah "$rpm_dir" || true
+            echo "All generated RPM files:"
+            find "$HOME/rpmbuild/RPMS" -type f -name "*.rpm" -print | sort || true
+            mapfile -t rpm_files < <(find "$rpm_dir" -maxdepth 1 -type f -name "*.rpm" -print | sort)
+            if [ "${#rpm_files[@]}" -eq 0 ]; then
+              echo "No RPM artifact found in $rpm_dir after rpmbuild"
+              exit 1
+            fi
+            for rpm_file in "${rpm_files[@]}"; do
+              name="$(basename "$rpm_file")"
+              case "$name" in
+                rustdesk-*) name="foxxdesk-${name#rustdesk-}" ;;
+              esac
+              target="/workspace/${name%.rpm}.rpm"
+              mv -f "$rpm_file" "$target"
+              echo "RPM artifact ready: $target"
             done
 
             # rpm suse package
@@ -1710,9 +1748,26 @@ jobs:
                 ;;
             esac
             HBB=`pwd` rpmbuild ./res/rpm-flutter-suse.spec -bb
-            pushd ~/rpmbuild/RPMS/${{ matrix.job.arch }}
-            for name in rustdesk*??.rpm; do
-                mv "$name" /workspace/"${name%%.rpm}-suse.rpm"
+            # V33: robust SUSE RPM artifact collection. Avoid fragile rustdesk/foxxdesk globs.
+            rpm_dir="$HOME/rpmbuild/RPMS/${{ matrix.job.arch }}"
+            mkdir -p /workspace
+            echo "SUSE RPM output directory: $rpm_dir"
+            ls -lah "$rpm_dir" || true
+            echo "All generated RPM files:"
+            find "$HOME/rpmbuild/RPMS" -type f -name "*.rpm" -print | sort || true
+            mapfile -t rpm_files < <(find "$rpm_dir" -maxdepth 1 -type f -name "*.rpm" -print | sort)
+            if [ "${#rpm_files[@]}" -eq 0 ]; then
+              echo "No SUSE RPM artifact found in $rpm_dir after rpmbuild"
+              exit 1
+            fi
+            for rpm_file in "${rpm_files[@]}"; do
+              name="$(basename "$rpm_file")"
+              case "$name" in
+                rustdesk-*) name="foxxdesk-${name#rustdesk-}" ;;
+              esac
+              target="/workspace/${name%.rpm}-suse.rpm"
+              mv -f "$rpm_file" "$target"
+              echo "SUSE RPM artifact ready: $target"
             done
 
       - name: Publish debian/rpm package
@@ -1722,8 +1777,8 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            rustdesk-*.deb
-            rustdesk-*.rpm
+            foxxdesk-*.deb
+            foxxdesk-*.rpm
 
       - name: Upload deb
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -1966,9 +2021,26 @@ jobs:
       - name: Rename rustdesk
         shell: bash
         run: |
-          for name in foxxdesk*??.deb; do
-              # use cp to duplicate deb files to fit other packages.
-              cp "$name" "${name%%.deb}-${{ matrix.job.arch }}-sciter.deb"
+          # V33: robust Sciter DEB artifact duplication. Avoid fragile foxxdesk*??.deb glob.
+          echo "Sciter DEB files before duplicate:"
+          find . -maxdepth 1 -type f \( -name "foxxdesk*.deb" -o -name "rustdesk*.deb" \) ! -name "*-sciter.deb" -print | sort || true
+          mapfile -t sciter_deb_files < <(find . -maxdepth 1 -type f \( -name "foxxdesk*.deb" -o -name "rustdesk*.deb" \) ! -name "*-sciter.deb" -print | sort)
+          if [ "${#sciter_deb_files[@]}" -eq 0 ]; then
+              echo "No base DEB artifact found for Sciter package duplication"
+              ls -lah . || true
+              exit 1
+          fi
+          for deb_file in "${sciter_deb_files[@]}"; do
+              name="$(basename "$deb_file")"
+              case "$name" in
+                rustdesk-*) name="foxxdesk-${name#rustdesk-}" ;;
+              esac
+              case "$name" in
+                *-${{ matrix.job.arch }}.deb) target="./${name%.deb}-sciter.deb" ;;
+                *) target="./${name%.deb}-${{ matrix.job.arch }}-sciter.deb" ;;
+              esac
+              cp -f "$deb_file" "$target"
+              echo "Sciter DEB artifact ready: $target"
           done
 
       - name: Publish debian package

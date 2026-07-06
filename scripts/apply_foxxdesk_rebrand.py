@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCRIPT_VERSION = "v32-macos-dmg-rename-and-linux-deb-permissions-2026-07-05"
+SCRIPT_VERSION = "v34-final-macos-app-bundle-cleanup-2026-07-06"
 APP_DISPLAY_NAME = "FoxxDesk"
 APP_SLUG = "foxxdesk"
 APP_SLUG_UPPER = "FOXXDESK"
@@ -2941,7 +2941,7 @@ def run_icon_assets_v28(target: Path, args: argparse.Namespace, report: Dict[str
         logging.warning("Icon assets stderr:\n%s", completed.stderr.strip())
 
     if completed.returncode != 0:
-        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v32.log"})
+        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v34.log"})
         return
 
     changed_match = re.search(r"arquivos alterados:\s*(\d+)", completed.stdout or "")
@@ -3152,8 +3152,8 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
 
 
 def setup_logging_v28(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:  # type: ignore[override]
-    """V30: mantém flags de logging da V28, mas usa rebrand_v32.log por padrão."""
-    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v32.log"
+    """V30: mantém flags de logging da V28, mas usa rebrand_v34.log por padrão."""
+    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v34.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     level = logging.DEBUG if getattr(args, "verbose", False) else logging.INFO
     root_logger = logging.getLogger()
@@ -3657,8 +3657,172 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
             )
         ]
 
+
+# ---------------------------------------------------------------------------
+# V33 final: robust Linux DEB/RPM collection in run-on-arch.
+# ---------------------------------------------------------------------------
+_PRE_V33_PATCH_TEXT = patch_text
+_PRE_V33_VALIDATE_BUILD_SAFETY = validate_build_safety
+
+
+def patch_linux_artifact_collection_v33(rel: str, text: str, args: argparse.Namespace) -> str:
+    if rel != ".github/workflows/flutter-build.yml":
+        return text
+    deb_block = '            # V33: robust DEB artifact collection. Avoid fragile rustdesk/foxxdesk globs.\n            mkdir -p /workspace\n            echo "DEB files before arch suffix:"\n            find /workspace -maxdepth 1 -type f \\( -name "foxxdesk*.deb" -o -name "rustdesk*.deb" \\) -print | sort || true\n            mapfile -t deb_files < <(find /workspace -maxdepth 1 -type f \\( -name "foxxdesk*.deb" -o -name "rustdesk*.deb" \\) -print | sort)\n            if [ "${#deb_files[@]}" -eq 0 ]; then\n              echo "No FoxxDesk/RustDesk DEB artifact found in /workspace after build.py"\n              ls -lah /workspace || true\n              exit 1\n            fi\n            for deb_file in "${deb_files[@]}"; do\n              name="$(basename "$deb_file")"\n              case "$name" in\n                rustdesk-*) name="foxxdesk-${name#rustdesk-}" ;;\n              esac\n              case "$name" in\n                *-${{ matrix.job.arch }}.deb) target="/workspace/$name" ;;\n                *) target="/workspace/${name%.deb}-${{ matrix.job.arch }}.deb" ;;\n              esac\n              if [ "$deb_file" != "$target" ]; then\n                mv -f "$deb_file" "$target"\n              fi\n              echo "DEB artifact ready: $target"\n            done'
+    rpm_block = '            # V33: robust RPM artifact collection. Avoid fragile rustdesk/foxxdesk globs.\n            rpm_dir="$HOME/rpmbuild/RPMS/${{ matrix.job.arch }}"\n            mkdir -p /workspace\n            echo "RPM output directory: $rpm_dir"\n            ls -lah "$rpm_dir" || true\n            echo "All generated RPM files:"\n            find "$HOME/rpmbuild/RPMS" -type f -name "*.rpm" -print | sort || true\n            mapfile -t rpm_files < <(find "$rpm_dir" -maxdepth 1 -type f -name "*.rpm" -print | sort)\n            if [ "${#rpm_files[@]}" -eq 0 ]; then\n              echo "No RPM artifact found in $rpm_dir after rpmbuild"\n              exit 1\n            fi\n            for rpm_file in "${rpm_files[@]}"; do\n              name="$(basename "$rpm_file")"\n              case "$name" in\n                rustdesk-*) name="foxxdesk-${name#rustdesk-}" ;;\n              esac\n              target="/workspace/${name%.rpm}.rpm"\n              mv -f "$rpm_file" "$target"\n              echo "RPM artifact ready: $target"\n            done'
+    suse_block = '            # V33: robust SUSE RPM artifact collection. Avoid fragile rustdesk/foxxdesk globs.\n            rpm_dir="$HOME/rpmbuild/RPMS/${{ matrix.job.arch }}"\n            mkdir -p /workspace\n            echo "SUSE RPM output directory: $rpm_dir"\n            ls -lah "$rpm_dir" || true\n            echo "All generated RPM files:"\n            find "$HOME/rpmbuild/RPMS" -type f -name "*.rpm" -print | sort || true\n            mapfile -t rpm_files < <(find "$rpm_dir" -maxdepth 1 -type f -name "*.rpm" -print | sort)\n            if [ "${#rpm_files[@]}" -eq 0 ]; then\n              echo "No SUSE RPM artifact found in $rpm_dir after rpmbuild"\n              exit 1\n            fi\n            for rpm_file in "${rpm_files[@]}"; do\n              name="$(basename "$rpm_file")"\n              case "$name" in\n                rustdesk-*) name="foxxdesk-${name#rustdesk-}" ;;\n              esac\n              target="/workspace/${name%.rpm}-suse.rpm"\n              mv -f "$rpm_file" "$target"\n              echo "SUSE RPM artifact ready: $target"\n            done'
+    sciter_block = '          # V33: robust Sciter DEB artifact duplication. Avoid fragile foxxdesk*??.deb glob.\n          echo "Sciter DEB files before duplicate:"\n          find . -maxdepth 1 -type f \\( -name "foxxdesk*.deb" -o -name "rustdesk*.deb" \\) ! -name "*-sciter.deb" -print | sort || true\n          mapfile -t sciter_deb_files < <(find . -maxdepth 1 -type f \\( -name "foxxdesk*.deb" -o -name "rustdesk*.deb" \\) ! -name "*-sciter.deb" -print | sort)\n          if [ "${#sciter_deb_files[@]}" -eq 0 ]; then\n              echo "No base DEB artifact found for Sciter package duplication"\n              ls -lah . || true\n              exit 1\n          fi\n          for deb_file in "${sciter_deb_files[@]}"; do\n              name="$(basename "$deb_file")"\n              case "$name" in\n                rustdesk-*) name="foxxdesk-${name#rustdesk-}" ;;\n              esac\n              case "$name" in\n                *-${{ matrix.job.arch }}.deb) target="./${name%.deb}-sciter.deb" ;;\n                *) target="./${name%.deb}-${{ matrix.job.arch }}-sciter.deb" ;;\n              esac\n              cp -f "$deb_file" "$target"\n              echo "Sciter DEB artifact ready: $target"\n          done'
+    replacements = [
+        ('            for name in foxxdesk*??.deb; do\n              mv "$name" "${name%%.deb}-${{ matrix.job.arch }}.deb"\n            done', deb_block),
+        ('            for name in rustdesk*??.deb; do\n              mv "$name" "${name%%.deb}-${{ matrix.job.arch }}.deb"\n            done', deb_block),
+        ('            HBB=`pwd` rpmbuild ./res/rpm-flutter.spec -bb\n            pushd ~/rpmbuild/RPMS/${{ matrix.job.arch }}\n            for name in foxxdesk*??.rpm; do\n                mv "$name" /workspace/"${name%%.rpm}.rpm"\n            done', '            HBB=`pwd` rpmbuild ./res/rpm-flutter.spec -bb' + "\n" + rpm_block),
+        ('            HBB=`pwd` rpmbuild ./res/rpm-flutter.spec -bb\n            pushd ~/rpmbuild/RPMS/${{ matrix.job.arch }}\n            for name in rustdesk*??.rpm; do\n                mv "$name" /workspace/"${name%%.rpm}.rpm"\n            done', '            HBB=`pwd` rpmbuild ./res/rpm-flutter.spec -bb' + "\n" + rpm_block),
+        ('            HBB=`pwd` rpmbuild ./res/rpm-flutter-suse.spec -bb\n            pushd ~/rpmbuild/RPMS/${{ matrix.job.arch }}\n            for name in foxxdesk*??.rpm; do\n                mv "$name" /workspace/"${name%%.rpm}-suse.rpm"\n            done', '            HBB=`pwd` rpmbuild ./res/rpm-flutter-suse.spec -bb' + "\n" + suse_block),
+        ('            HBB=`pwd` rpmbuild ./res/rpm-flutter-suse.spec -bb\n            pushd ~/rpmbuild/RPMS/${{ matrix.job.arch }}\n            for name in rustdesk*??.rpm; do\n                mv "$name" /workspace/"${name%%.rpm}-suse.rpm"\n            done', '            HBB=`pwd` rpmbuild ./res/rpm-flutter-suse.spec -bb' + "\n" + suse_block),
+        ('          for name in foxxdesk*??.deb; do\n              # use cp to duplicate deb files to fit other packages.\n              cp "$name" "${name%%.deb}-${{ matrix.job.arch }}-sciter.deb"\n          done', sciter_block),
+        ('          for name in rustdesk*??.deb; do\n              # use cp to duplicate deb files to fit other packages.\n              cp "$name" "${name%%.deb}-${{ matrix.job.arch }}-sciter.deb"\n          done', sciter_block),
+    ]
+    for old, new in replacements:
+        text = text.replace(old, new)
+    if 'V33: robust DEB artifact collection' not in text and '            python3 ./build.py --flutter --skip-cargo' in text:
+        text = text.replace('            python3 ./build.py --flutter --skip-cargo', '            python3 ./build.py --flutter --skip-cargo' + "\n" + deb_block, 1)
+    if 'V33: robust RPM artifact collection' not in text and '            HBB=`pwd` rpmbuild ./res/rpm-flutter.spec -bb' in text:
+        text = text.replace('            HBB=`pwd` rpmbuild ./res/rpm-flutter.spec -bb', '            HBB=`pwd` rpmbuild ./res/rpm-flutter.spec -bb' + "\n" + rpm_block, 1)
+    if 'V33: robust SUSE RPM artifact collection' not in text and '            HBB=`pwd` rpmbuild ./res/rpm-flutter-suse.spec -bb' in text:
+        text = text.replace('            HBB=`pwd` rpmbuild ./res/rpm-flutter-suse.spec -bb', '            HBB=`pwd` rpmbuild ./res/rpm-flutter-suse.spec -bb' + "\n" + suse_block, 1)
+    if 'V33: robust Sciter DEB artifact duplication' not in text and 'sciter.deb' in text:
+        text = text.replace('          for name in foxxdesk*??.deb; do\n              # use cp to duplicate deb files to fit other packages.\n              cp "$name" "${name%%.deb}-${{ matrix.job.arch }}-sciter.deb"\n          done', sciter_block)
+        text = text.replace('          for name in rustdesk*??.deb; do\n              # use cp to duplicate deb files to fit other packages.\n              cp "$name" "${name%%.deb}-${{ matrix.job.arch }}-sciter.deb"\n          done', sciter_block)
+    text = text.replace('rustdesk-*.rpm', 'foxxdesk-*.rpm')
+    text = text.replace('rustdesk-*.deb', 'foxxdesk-*.deb')
+    return text
+
+
+def patch_text(rel: str, text: str, args: argparse.Namespace) -> str:  # type: ignore[override]
+    text = _PRE_V33_PATCH_TEXT(rel, text, args)
+    text = patch_linux_artifact_collection_v33(rel, text, args)
+    return text
+
+
+def _v33_risks(target: Path) -> list[tuple[str, str]]:
+    rel = '.github/workflows/flutter-build.yml'
+    p = target / rel
+    if not p.exists():
+        return []
+    try:
+        t = normalize_lf(p.read_text(encoding='utf-8', errors='ignore'))
+    except OSError:
+        return []
+    issues: list[tuple[str, str]] = []
+    for frag in ['for name in rustdesk*??.rpm', 'for name in foxxdesk*??.rpm', 'for name in rustdesk*??.deb', 'for name in foxxdesk*??.deb', 'rustdesk-*.rpm', 'rustdesk-*.deb']:
+        if frag in t:
+            issues.append((rel, f'V33: ainda existe fragmento fragil/antigo de empacotamento Linux: {frag}'))
+    for marker in ['V33: robust DEB artifact collection', 'V33: robust RPM artifact collection', 'V33: robust SUSE RPM artifact collection']:
+        if marker not in t:
+            issues.append((rel, f'V33: bloco ausente: {marker}'))
+    if 'sciter.deb' in t and 'V33: robust Sciter DEB artifact duplication' not in t:
+        issues.append((rel, 'V33: bloco robusto de duplicacao DEB Sciter nao foi aplicado'))
+    if 'find "$HOME/rpmbuild/RPMS" -type f -name "*.rpm" -print' not in t:
+        issues.append((rel, 'V33: workflow ainda nao lista RPMs gerados para debug'))
+    return issues
+
+
+def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type: ignore[override]
+    _PRE_V33_VALIDATE_BUILD_SAFETY(target, report)
+    issues = _v33_risks(target)
+    if issues:
+        for rel, msg in issues:
+            report['pending'].append({'file': rel, 'message': msg})
+    else:
+        report['pending'] = [p for p in report['pending'] if not (p.get('file') == '.github/workflows/flutter-build.yml' and any(x in str(p.get('message')) for x in ['rpm', 'RPM', 'deb', 'DEB', '*??.rpm', '*??.deb']))]
+
+
+
+# ---------------------------------------------------------------------------
+# V34: limpeza final e agressiva de RustDesk.app/rustdesk.app em workflows macOS.
+#
+# A V31 corrigia os blocos mais comuns de create-dmg/codesign, mas em projetos
+# já modificados por várias versões podia sobrar uma variação literal em
+# .github/workflows/flutter-build.yml ou .github/workflows/playground.yml.
+# Esta etapa é propositalmente restrita a workflows/scripts de empacotamento
+# macOS e substitui qualquer ocorrência case-insensitive de rustdesk.app por
+# FoxxDesk.app, além de limpar pendências antigas quando os arquivos ficam OK.
+# ---------------------------------------------------------------------------
+_PRE_V34_PATCH_TEXT = patch_text
+_PRE_V34_VALIDATE_BUILD_SAFETY = validate_build_safety
+
+
+def patch_macos_app_bundle_literals_v34(rel: str, text: str, args: argparse.Namespace) -> str:
+    if rel not in {'.github/workflows/flutter-build.yml', '.github/workflows/playground.yml', 'res/osx-dist.sh'}:
+        return text
+    text = normalize_lf(text)
+
+    # Troca qualquer variação literal do bundle antigo. É seguro nestes arquivos:
+    # aqui .app é nome de artefato/caminho do macOS, não API upstream.
+    text = re.sub(r'(?i)rustdesk\.app', 'FoxxDesk.app', text)
+
+    # Corrige caminhos de Release mesmo quando vierem sem ./ ou com barras mistas.
+    text = re.sub(
+        r'(?i)(flutter[/\\]build[/\\]macos[/\\]Build[/\\]Products[/\\]Release[/\\])rustdesk\.app',
+        lambda m: m.group(1).replace('\\\\', '/').replace('\\', '/') + 'FoxxDesk.app',
+        text,
+    )
+
+    # Mantém os flags do create-dmg padronizados mesmo em linhas quebradas em várias linhas.
+    text = re.sub(r'--icon\s+["\']FoxxDesk\.app["\']', '--icon "FoxxDesk.app"', text)
+    text = re.sub(r'--hide-extension\s+["\']FoxxDesk\.app["\']', '--hide-extension "FoxxDesk.app"', text)
+
+    # Se alguma versão antiga deixou Release/FoxxDesk.app com slash duplicado ou path estranho.
+    text = text.replace('Release//FoxxDesk.app', 'Release/FoxxDesk.app')
+    text = text.replace('Release\\FoxxDesk.app', 'Release/FoxxDesk.app')
+    return text
+
+
+def patch_text(rel: str, text: str, args: argparse.Namespace) -> str:  # type: ignore[override]
+    text = _PRE_V34_PATCH_TEXT(rel, text, args)
+    text = patch_macos_app_bundle_literals_v34(rel, text, args)
+    return text
+
+
+def _v34_macos_app_bundle_risks(target: Path) -> list[tuple[str, str]]:
+    issues: list[tuple[str, str]] = []
+    for rel in ['.github/workflows/flutter-build.yml', '.github/workflows/playground.yml', 'res/osx-dist.sh']:
+        p = target / rel
+        if not p.exists():
+            continue
+        try:
+            t = normalize_lf(p.read_text(encoding='utf-8', errors='ignore'))
+        except OSError:
+            continue
+        if re.search(r'(?i)rustdesk\.app', t):
+            issues.append((rel, 'V34: ainda contém RustDesk.app/rustdesk.app; deve usar FoxxDesk.app'))
+        if re.search(r'(?i)Release[/\\]RustDesk\.app', t):
+            issues.append((rel, 'V34: caminho macOS ainda aponta para Release/RustDesk.app'))
+        if 'create-dmg' in t and re.search(r'(?i)(--icon|--hide-extension)\s+["\']RustDesk\.app["\']', t):
+            issues.append((rel, 'V34: create-dmg ainda usa RustDesk.app'))
+    return issues
+
+
+def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type: ignore[override]
+    _PRE_V34_VALIDATE_BUILD_SAFETY(target, report)
+    issues = _v34_macos_app_bundle_risks(target)
+    if issues:
+        for rel, msg in issues:
+            report['pending'].append({'file': rel, 'message': msg})
+        return
+
+    # Se a checagem V34 passou, remove falsos positivos legados da V31 em workflows macOS.
+    mac_files = {'.github/workflows/flutter-build.yml', '.github/workflows/playground.yml', 'res/osx-dist.sh'}
+    report['pending'] = [
+        p for p in report['pending']
+        if not (
+            p.get('file') in mac_files
+            and any(token in str(p.get('message')) for token in ['RustDesk.app', 'rustdesk.app', 'Release/RustDesk.app', 'create-dmg ainda usa RustDesk.app'])
+        )
+    ]
+
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V32 patch-only, englobando todas as correções anteriores e corrigindo rename/publicação DMG macOS e permissões DEB Linux.")
+    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V34 patch-only, englobando todas as correções anteriores e corrigindo definitivamente RustDesk.app/rustdesk.app nos workflows macOS.")
     p.add_argument("--target", default="./", help="Pasta raiz do projeto alvo. Padrão: ./")
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="Mostra o que seria alterado sem salvar arquivos do projeto, exceto relatório.")
@@ -3675,11 +3839,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--remove-old-renamed", action="store_true", help="Depois de copiar arquivos renomeados, remove os antigos. Use só após conferir o dry-run.")
     p.add_argument("--refresh-hbb-common", action="store_true", help="Força baixar novamente libs/hbb_common antes de aplicar o brand. Por padrão, baixa só se estiver ausente/incompleto.")
     p.add_argument("--skip-hbb-common-download", action="store_true", help="Não baixa libs/hbb_common automaticamente antes do brand, mesmo se estiver ausente.")
-    p.add_argument("--apply-icon-assets", action="store_true", help="V32: gera/atualiza os assets de ícone usando scripts/apply_foxxdesk_icon.py. Sem esta flag, só cria/atualiza o script helper.")
+    p.add_argument("--apply-icon-assets", action="store_true", help="V34: gera/atualiza os assets de ícone usando scripts/apply_foxxdesk_icon.py. Sem esta flag, só cria/atualiza o script helper.")
     p.add_argument("--icon-source", default="res/icon.png", help="Imagem fonte relativa ao projeto para gerar os ícones. Padrão: res/icon.png")
     p.add_argument("--icon-ios-background", default="#FFFFFF", help="Fundo usado para achatar ícones iOS/RGB. Padrão: #FFFFFF")
     p.add_argument("--icon-update-ios-contents", action="store_true", help="Também normaliza flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json")
-    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v32.log")
+    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v34.log")
     p.add_argument("--verbose", action="store_true", help="Ativa logging DEBUG no arquivo/console.")
     p.add_argument("--quiet", action="store_true", help="Não imprime logs no console; mantém log em arquivo.")
     return p.parse_args()
@@ -3748,7 +3912,7 @@ def main() -> int:
     ensure_generated_bridge_compat_helper(target, args, report, backup_root)
     ensure_executable_permissions(target, args, report, backup_root)
 
-    logging.info("Etapa: icon assets V32")
+    logging.info("Etapa: icon assets V34")
     run_icon_assets_v28(target, args, report)
 
     if args.apply and args.remove_old_renamed:

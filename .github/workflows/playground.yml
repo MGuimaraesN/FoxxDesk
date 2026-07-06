@@ -210,7 +210,7 @@ jobs:
           # Unlock keychain
           security default-keychain -s rustdesk.keychain
           security unlock-keychain -p ${{ secrets.MACOS_P12_PASSWORD }} rustdesk.keychain
-          # start sign the rustdesk.app and dmg
+          # start sign the FoxxDesk.app and dmg
           rm -rf *.dmg || true
           codesign --force --options runtime -s ${{ secrets.MACOS_CODESIGN_IDENTITY }} --deep --strict ./flutter/build/macos/Build/Products/Release/FoxxDesk.app -vvv
           create-dmg --icon "FoxxDesk.app" 200 190 --hide-extension "FoxxDesk.app" --window-size 800 400 --app-drop-link 600 185 rustdesk-${{ env.VERSION }}.dmg ./flutter/build/macos/Build/Products/Release/FoxxDesk.app

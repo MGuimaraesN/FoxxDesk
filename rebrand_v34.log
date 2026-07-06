@@ -1,0 +1,13 @@
+2026-07-06 10:57:09,335 [INFO] FoxxDesk rebrand v34-final-macos-app-bundle-cleanup-2026-07-06 iniciado
+2026-07-06 10:57:09,335 [INFO] Target: /home/mateus/_Projects/FoxxDesk
+2026-07-06 10:57:09,335 [INFO] Modo: apply | profile=full | scan_all=False
+2026-07-06 10:57:09,336 [INFO] Icon assets: False | source=res/icon.png
+2026-07-06 10:57:09,337 [INFO] Etapa: garantir libs/hbb_common antes do rebrand
+2026-07-06 10:57:09,338 [INFO] Etapa: criar/atualizar helpers e workflow FoxxDesk
+2026-07-06 10:57:09,339 [INFO] Etapa: aplicar renomeações seguras e remover obsoletos
+2026-07-06 10:57:09,340 [INFO] Etapa: processar 279 arquivo(s) candidato(s)
+2026-07-06 10:57:10,785 [INFO] Etapa: reforçar helper bridge e permissões executáveis
+2026-07-06 10:57:10,786 [INFO] Etapa: icon assets V34
+2026-07-06 10:57:10,786 [INFO] Icon assets: pulado porque --apply-icon-assets não foi informado
+2026-07-06 10:57:10,786 [INFO] Etapa: validação final de segurança/build
+2026-07-06 10:57:10,953 [INFO] Resumo final: alterados=2 pendencias=0 nao_encontrados=0 relatorio=/home/mateus/_Projects/FoxxDesk/rebrand_report.md
