@@ -58,3 +58,11 @@ libsciter.dylib
 flutter/web/
 .icon_asset_backup/*
 .rebrand_backup/*
+# FoxxDesk persistent overlay: must survive upstream source updates and be committed.
+!.foxxdesk/
+!.foxxdesk/**
+
+# Local preparation reports/backups are generated and must not be committed.
+rebrand_report.md
+rebrand_v*.log
+icon_assets_report.md

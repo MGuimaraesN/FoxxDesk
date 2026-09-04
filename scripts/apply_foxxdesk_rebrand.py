@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCRIPT_VERSION = "v34-final-macos-app-bundle-cleanup-2026-07-06"
+SCRIPT_VERSION = "v35-resilient-upstream-ci-2026-09-04"
 APP_DISPLAY_NAME = "FoxxDesk"
 APP_SLUG = "foxxdesk"
 APP_SLUG_UPPER = "FOXXDESK"
@@ -787,6 +787,7 @@ def patch_config_rs(rel: str, text: str, args: argparse.Namespace) -> str:
         count=1,
     )
 
+
     # ID server / rendezvous compilado.
     text = re.sub(
         r'pub static ref PROD_RENDEZVOUS_SERVER: RwLock<String> = RwLock::new\("[^"]*"\.to_owned\(\)\);',
@@ -1385,39 +1386,38 @@ def ensure_v25_generated_files(target: Path, args: argparse.Namespace, report: D
 
 
 def ensure_hbb_common_before_branding(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:
-    """Baixa libs/hbb_common antes do rebrand quando estiver ausente/incompleto, com opção de refresh forçado."""
+    """Sincroniza hbb_common pela revisão compatível; nunca baixa a branch main.
+
+    A revisão vem do gitlink do submódulo quando disponível ou de
+    .foxxdesk/brand.json/versão do Cargo.toml. Isso evita misturar uma release
+    do RustDesk com hbb_common mais novo.
+    """
     rel = "libs/hbb_common"
-    cargo_toml = target / rel / "Cargo.toml"
-    needs_download = bool(getattr(args, "refresh_hbb_common", False)) or not cargo_toml.exists()
+    helper = target / "scripts/foxxdesk_sync_hbb_common.py"
     report["analyzed_files"].append(rel)
-    if not needs_download:
-        report["already_applied_files"].append(rel)
+    if not helper.is_file():
+        report["pending"].append({"file": rel, "message": "helper scripts/foxxdesk_sync_hbb_common.py ausente; não é seguro baixar hbb_common/main"})
         return
-    cmd = """rm -rf libs/hbb_common hbb_common-main hbb_common.zip
-curl -L https://github.com/rustdesk/hbb_common/archive/refs/heads/main.zip -o hbb_common.zip
-unzip hbb_common.zip
-mv hbb_common-main libs/hbb_common
-rm hbb_common.zip"""
-    report["changed_files"].append(rel)
-    report["changes"].append({
-        "file": rel,
-        "line": 1,
-        "status": "baixaria" if args.dry_run else "baixado/atualizado",
-        "action": "garantir hbb_common antes do rebrand",
-        "message": "usa o comando solicitado para restaurar libs/hbb_common antes de aplicar o brand" + (" (refresh forçado)" if getattr(args, "refresh_hbb_common", False) else " (ausente/incompleto)"),
-    })
+
+    cmd = [sys.executable, str(helper), "--target", str(target)]
+    if getattr(args, "refresh_hbb_common", False):
+        cmd.append("--force")
     if args.dry_run:
-        return
+        cmd.append("--check")
     try:
-        subprocess.run(["bash", "-lc", cmd], cwd=str(target), check=True)
-    except FileNotFoundError:
-        report["pending"].append({"file": rel, "message": "bash não encontrado para executar o comando de download do hbb_common"})
+        cp = subprocess.run(cmd, cwd=str(target), check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except OSError as exc:
+        report["pending"].append({"file": rel, "message": f"falha ao executar sincronizador hbb_common: {exc}"})
         return
-    except subprocess.CalledProcessError as exc:
-        report["pending"].append({"file": rel, "message": f"falha ao baixar hbb_common antes do rebrand: exit {exc.returncode}"})
+    if cp.returncode != 0:
+        msg = (cp.stderr or cp.stdout or "falha desconhecida").strip()
+        report["pending"].append({"file": rel, "message": f"hbb_common incompatível/não sincronizado: {msg}"})
         return
-    if not cargo_toml.exists():
-        report["pending"].append({"file": rel, "message": "download do hbb_common terminou, mas libs/hbb_common/Cargo.toml não foi encontrado"})
+    if "(sincronizado)" in cp.stdout:
+        report["changed_files"].append(rel)
+        report["changes"].append({"file": rel, "line": 1, "status": "sincronizado", "action": "restaurar revisão hbb_common compatível", "message": cp.stdout.strip()})
+    else:
+        report["already_applied_files"].append(rel)
 
 
 def patch_copyright_v25(rel: str, text: str) -> str:
@@ -1872,6 +1872,14 @@ def patch_config_rs(rel: str, text: str, args: argparse.Namespace) -> str:  # ty
     text = re.sub(
         r'pub const DEFAULT_CUSTOM_CLIENT_KEY: &str = "[^"]*";',
         f'pub const DEFAULT_CUSTOM_CLIENT_KEY: &str = "{key}";',
+        text,
+        count=1,
+    )
+    # Keep the public application name independent from internal RustDesk API/crate
+    # names. This is intentionally explicit and works in the conservative profile.
+    text = re.sub(
+        r'pub static ref APP_NAME: RwLock<String> = RwLock::new\("[^"]*"\.to_owned\(\)\);',
+        'pub static ref APP_NAME: RwLock<String> = RwLock::new("FoxxDesk".to_owned());',
         text,
         count=1,
     )
@@ -2941,7 +2949,7 @@ def run_icon_assets_v28(target: Path, args: argparse.Namespace, report: Dict[str
         logging.warning("Icon assets stderr:\n%s", completed.stderr.strip())
 
     if completed.returncode != 0:
-        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v34.log"})
+        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v35.log"})
         return
 
     changed_match = re.search(r"arquivos alterados:\s*(\d+)", completed.stdout or "")
@@ -3152,8 +3160,8 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
 
 
 def setup_logging_v28(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:  # type: ignore[override]
-    """V30: mantém flags de logging da V28, mas usa rebrand_v34.log por padrão."""
-    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v34.log"
+    """V30: mantém flags de logging da V28, mas usa rebrand_v35.log por padrão."""
+    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v35.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     level = logging.DEBUG if getattr(args, "verbose", False) else logging.INFO
     root_logger = logging.getLogger()
@@ -3833,17 +3841,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--key", default=None, help="Chave pública do hbbs. Se omitida, usa DEFAULT_KEY e grava em config.rs/workflow.")
     p.add_argument("--maintainer-email", default=None, help="E-mail do mantenedor em metadados de pacote.")
     p.add_argument("--homepage", default=None, help="Homepage pública para metadados. Se omitido, usa --server.")
-    p.add_argument("--profile", choices=["safe", "full"], default="full", help="full: TODOS os arquivos da allowlist com rebrand textual patch-only; safe: só correções críticas/build. Padrão: full.")
+    p.add_argument("--profile", choices=["safe", "full"], default="safe", help="safe: núcleo crítico/build (padrão e recomendado); full: allowlist completa para reaplicar o brand após uma atualização.")
     p.add_argument("--scan-all", action="store_true", help="Opcional: varre todos os arquivos textuais fora das pastas ignoradas. Recomendado só com --profile full.")
     p.add_argument("--max-size", type=int, default=2_000_000, help="Tamanho máximo por arquivo textual analisado. Padrão: 2MB.")
     p.add_argument("--remove-old-renamed", action="store_true", help="Depois de copiar arquivos renomeados, remove os antigos. Use só após conferir o dry-run.")
-    p.add_argument("--refresh-hbb-common", action="store_true", help="Força baixar novamente libs/hbb_common antes de aplicar o brand. Por padrão, baixa só se estiver ausente/incompleto.")
+    p.add_argument("--refresh-hbb-common", action="store_true", help="Força restaurar libs/hbb_common na revisão compatível da versão; nunca usa a branch main.")
     p.add_argument("--skip-hbb-common-download", action="store_true", help="Não baixa libs/hbb_common automaticamente antes do brand, mesmo se estiver ausente.")
     p.add_argument("--apply-icon-assets", action="store_true", help="V34: gera/atualiza os assets de ícone usando scripts/apply_foxxdesk_icon.py. Sem esta flag, só cria/atualiza o script helper.")
     p.add_argument("--icon-source", default="res/icon.png", help="Imagem fonte relativa ao projeto para gerar os ícones. Padrão: res/icon.png")
     p.add_argument("--icon-ios-background", default="#FFFFFF", help="Fundo usado para achatar ícones iOS/RGB. Padrão: #FFFFFF")
     p.add_argument("--icon-update-ios-contents", action="store_true", help="Também normaliza flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json")
-    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v34.log")
+    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v35.log")
     p.add_argument("--verbose", action="store_true", help="Ativa logging DEBUG no arquivo/console.")
     p.add_argument("--quiet", action="store_true", help="Não imprime logs no console; mantém log em arquivo.")
     return p.parse_args()
