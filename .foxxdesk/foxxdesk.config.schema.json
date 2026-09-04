@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FoxxDesk configuration",
+  "type": "object",
+  "required": ["brand", "network", "icons", "rebrand", "build", "github_actions", "safety"],
+  "properties": {
+    "brand": {"type":"object"},
+    "network": {"type":"object"},
+    "icons": {"type":"object"},
+    "rebrand": {"type":"object"},
+    "build": {"type":"object"},
+    "github_actions": {"type":"object"},
+    "safety": {"type":"object"}
+  },
+  "additionalProperties": true
+}

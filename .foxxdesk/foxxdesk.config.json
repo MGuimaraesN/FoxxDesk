@@ -1,0 +1,56 @@
+{
+  "$schema": "./foxxdesk.config.schema.json",
+  "brand": {
+    "display_name": "FoxxDesk",
+    "slug": "foxxdesk",
+    "company": "MGN Systems",
+    "maintainer_name": "Matheus",
+    "maintainer_email": "mateus@mguimaraesn.dev",
+    "homepage": "https://foxxdesk.mguimaraesn.dev"
+  },
+  "network": {
+    "server": "foxxdesk.mguimaraesn.dev",
+    "relay": "foxxdesk.mguimaraesn.dev",
+    "key": ""
+  },
+  "icons": {
+    "enabled": true,
+    "source": ".foxxdesk/assets/icon.png",
+    "apply_on_prepare": true,
+    "discover_by_name": true,
+    "quality_profile": "best",
+    "min_source_size": 1024,
+    "recommended_source_size": 2048,
+    "padding_ratio": 0.0,
+    "ios_background": "#FFFFFF",
+    "png_compress_level": 9,
+    "png_optimize": true
+  },
+  "rebrand": {
+    "profile": "full",
+    "scan_all": false,
+    "patch_only": true,
+    "replace_whole_source_files": false,
+    "protect_upstream_names": true
+  },
+  "build": {
+    "flutter": true,
+    "portable": true,
+    "hwcodec": true,
+    "vram": false,
+    "unix_file_copy_paste": true,
+    "screencapturekit": true,
+    "skip_cargo": false,
+    "skip_portable_pack": false,
+    "cargo_features": []
+  },
+  "github_actions": {
+    "enabled": true,
+    "validate_before_build": true
+  },
+  "safety": {
+    "fail_on_missing_required_files": true,
+    "fail_on_incompatible_hbb_common": true,
+    "backup_before_patch": true
+  }
+}
