@@ -139,10 +139,10 @@ the FUSE server will figure out the file system tree and rearrange its content.
 
   ```text
   UNIX
-  /usr/bin/foxxdesk
+  /usr/bin/rustdesk
   ->
   DOS
-  \usr\bin\foxxdesk
+  \usr\bin\rustdesk
   ```
 
 - To better fit for preserving permissions on unix-like platforms,

@@ -111,9 +111,6 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Prepare FoxxDesk source
-      uses: ./.github/actions/prepare-foxxdesk
-
     - name: Install prerequisites
       shell: bash
       run: |

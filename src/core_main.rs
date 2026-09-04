@@ -141,6 +141,7 @@ pub fn core_main() -> Option<Vec<String>> {
         _is_quick_support |= !crate::platform::is_installed()
             && args.is_empty()
             && (is_quick_support_exe(&arg_exe)
+                || config::LocalConfig::get_option("pre-elevate-service") == "Y"
                 || (!click_setup && crate::platform::is_elevated(None).unwrap_or(false)));
         crate::portable_service::client::set_quick_support(_is_quick_support);
     }
@@ -200,7 +201,7 @@ pub fn core_main() -> Option<Vec<String>> {
     } else {
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         // Root CLI management commands must talk to the user `--server` main IPC.
-        // Example: `sudo foxxdesk --option custom-rendezvous-server` should query the
+        // Example: `sudo rustdesk --option custom-rendezvous-server` should query the
         // user's IPC instead of root's `/tmp/<app>-0/ipc`; `connect()` still limits this
         // routing to empty-postfix main IPC only.
         let _user_main_ipc_scope = if crate::platform::is_installed()
@@ -307,7 +308,7 @@ pub fn core_main() -> Option<Vec<String>> {
             } else if args[0] == "--install-remote-printer" {
                 #[cfg(windows)]
                 if crate::platform::is_win_10_or_greater() {
-                    match remote_printer::install_update_printer("foxxdesk") {
+                    match remote_printer::install_update_printer(&crate::get_app_name()) {
                         Ok(_) => {
                             log::info!("Remote printer installed/updated successfully");
                         }
@@ -322,7 +323,7 @@ pub fn core_main() -> Option<Vec<String>> {
             } else if args[0] == "--uninstall-remote-printer" {
                 #[cfg(windows)]
                 if crate::platform::is_win_10_or_greater() {
-                    remote_printer::uninstall_printer("foxxdesk");
+                    remote_printer::uninstall_printer(&crate::get_app_name());
                     log::info!("Remote printer uninstalled");
                 }
                 return None;
@@ -722,7 +723,7 @@ pub fn core_main() -> Option<Vec<String>> {
             }
             return None;
         } else if args[0] == "-gtk-sudo" {
-            // foxxdesk service kill `foxxdesk --` processes
+            // rustdesk service kill `rustdesk --` processes
             #[cfg(target_os = "linux")]
             if args.len() > 2 {
                 crate::platform::gtk_sudo::exec();

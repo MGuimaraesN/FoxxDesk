@@ -1819,12 +1819,12 @@ class _DisplayState extends State<_Display> {
 
     final groupValue = bind.mainGetUserDefaultOption(key: kOptionViewStyle);
     return _Card(title: 'Default View Style', children: [
-      _Radio<String>(context,
+      _Radio(context,
           value: kRemoteViewStyleOriginal,
           groupValue: groupValue,
           label: 'Scale original',
           onChanged: isOptFixed ? null : onChanged),
-      _Radio<String>(context,
+      _Radio(context,
           value: kRemoteViewStyleAdaptive,
           groupValue: groupValue,
           label: 'Scale adaptive',
@@ -1849,18 +1849,18 @@ class _DisplayState extends State<_Display> {
     }
 
     return _Card(title: 'Default Scroll Style', children: [
-      _Radio<String>(context,
+      _Radio(context,
           value: kRemoteScrollStyleAuto,
           groupValue: groupValue,
           label: 'ScrollAuto',
           onChanged: isOptFixed ? null : onChanged),
-      _Radio<String>(context,
+      _Radio(context,
           value: kRemoteScrollStyleBar,
           groupValue: groupValue,
           label: 'Scrollbar',
           onChanged: isOptFixed ? null : onChanged),
       if (!isWeb) ...[
-        _Radio<String>(context,
+        _Radio(context,
             value: kRemoteScrollStyleEdge,
             groupValue: groupValue,
             label: 'ScrollEdge',
@@ -1889,22 +1889,22 @@ class _DisplayState extends State<_Display> {
     final isOptFixed = isOptionFixed(kOptionImageQuality);
     final groupValue = bind.mainGetUserDefaultOption(key: kOptionImageQuality);
     return _Card(title: 'Default Image Quality', children: [
-      _Radio<String>(context,
+      _Radio(context,
           value: kRemoteImageQualityBest,
           groupValue: groupValue,
           label: 'Good image quality',
           onChanged: isOptFixed ? null : onChanged),
-      _Radio<String>(context,
+      _Radio(context,
           value: kRemoteImageQualityBalanced,
           groupValue: groupValue,
           label: 'Balanced',
           onChanged: isOptFixed ? null : onChanged),
-      _Radio<String>(context,
+      _Radio(context,
           value: kRemoteImageQualityLow,
           groupValue: groupValue,
           label: 'Optimize reaction time',
           onChanged: isOptFixed ? null : onChanged),
-      _Radio<String>(context,
+      _Radio(context,
           value: kRemoteImageQualityCustom,
           groupValue: groupValue,
           label: 'Custom',
@@ -1952,14 +1952,14 @@ class _DisplayState extends State<_Display> {
       final h264 = codecsJson['h264'] ?? false;
       final h265 = codecsJson['h265'] ?? false;
       if (h264) {
-        hwRadios.add(_Radio<String>(context,
+        hwRadios.add(_Radio(context,
             value: 'h264',
             groupValue: groupValue,
             label: 'H264',
             onChanged: isOptFixed ? null : onChanged));
       }
       if (h265) {
-        hwRadios.add(_Radio<String>(context,
+        hwRadios.add(_Radio(context,
             value: 'h265',
             groupValue: groupValue,
             label: 'H265',
@@ -1969,22 +1969,22 @@ class _DisplayState extends State<_Display> {
       debugPrint("failed to parse supported hwdecodings, err=$e");
     }
     return _Card(title: 'Default Codec', children: [
-      _Radio<String>(context,
+      _Radio(context,
           value: 'auto',
           groupValue: groupValue,
           label: 'Auto',
           onChanged: isOptFixed ? null : onChanged),
-      _Radio<String>(context,
+      _Radio(context,
           value: 'vp8',
           groupValue: groupValue,
           label: 'VP8',
           onChanged: isOptFixed ? null : onChanged),
-      _Radio<String>(context,
+      _Radio(context,
           value: 'vp9',
           groupValue: groupValue,
           label: 'VP9',
           onChanged: isOptFixed ? null : onChanged),
-      _Radio<String>(context,
+      _Radio(context,
           value: 'av1',
           groupValue: groupValue,
           label: 'AV1',
@@ -2020,7 +2020,7 @@ class _DisplayState extends State<_Display> {
       title: 'Privacy mode',
       children: privacyModeImpls.map((impl) {
         final d = impl as List<dynamic>;
-        return _Radio<String>(context,
+        return _Radio(context,
             value: d[0] as String,
             groupValue: groupValue,
             label: d[1] as String,
@@ -2361,17 +2361,17 @@ class __PrinterState extends State<_Printer> {
 
     PrinterOptions printerOptions = PrinterOptions.load();
     return _Card(title: 'Incoming Print Jobs', children: [
-      _Radio<String>(context,
+      _Radio(context,
           value: kValuePrinterIncomingJobDismiss,
           groupValue: printerOptions.action,
           label: 'Dismiss',
           onChanged: onRadioChanged),
-      _Radio<String>(context,
+      _Radio(context,
           value: kValuePrinterIncomingJobDefault,
           groupValue: printerOptions.action,
           label: 'use-the-default-printer-tip',
           onChanged: onRadioChanged),
-      _Radio<String>(context,
+      _Radio(context,
           value: kValuePrinterIncomingJobSelected,
           groupValue: printerOptions.action,
           label: 'use-the-selected-printer-tip',
@@ -2429,7 +2429,7 @@ class _AboutState extends State<_About> {
       final scrollController = ScrollController();
       return SingleChildScrollView(
         controller: scrollController,
-        child: _Card(title: translate('About FoxxDesk'), children: [
+        child: _Card(title: translate('About RustDesk'), children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2656,14 +2656,14 @@ class _WaylandCardState extends State<WaylandCard> {
   final _clearShortcutsInhibitorFailedMsg = ''.obs;
   // Don't show the shortcuts permission reset button for now.
   // Users can change it manually:
-  //   "Settings" -> "Apps" -> "FoxxDesk" -> "Permissions" -> "Inhibit Shortcuts".
+  //   "Settings" -> "Apps" -> "RustDesk" -> "Permissions" -> "Inhibit Shortcuts".
   // For resetting(clearing) the permission from the portal permission store, you can
-  // use (replace <desktop-id> with the FoxxDesk desktop file ID):
+  // use (replace <desktop-id> with the RustDesk desktop file ID):
   //   busctl --user call org.freedesktop.impl.portal.PermissionStore \
   //   /org/freedesktop/impl/portal/PermissionStore org.freedesktop.impl.portal.PermissionStore \
   //   DeletePermission sss "gnome" "shortcuts-inhibitor" "<desktop-id>"
-  // On a native install this is typically "foxxdesk.desktop"; on Flatpak it is usually
-  // the exported desktop ID derived from the Flatpak app-id (e.g. "com.foxxdesk.client.desktop").
+  // On a native install this is typically "rustdesk.desktop"; on Flatpak it is usually
+  // the exported desktop ID derived from the Flatpak app-id (e.g. "com.rustdesk.RustDesk.desktop").
   //
   // We may add it back in the future if needed.
   final showResetInhibitorPermission = false;

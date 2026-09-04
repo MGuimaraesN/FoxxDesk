@@ -39,9 +39,6 @@ jobs:
         with:
           submodules: recursive
 
-
-      - name: Prepare FoxxDesk source
-        uses: ./.github/actions/prepare-foxxdesk
       - name: Install prerequisites
         run: |
           sudo apt-get install ca-certificates -y
@@ -89,9 +86,6 @@ jobs:
       - name: Install flutter rust bridge deps
         shell: bash
         run: |
-          git submodule sync --recursive
-          git submodule update --init --recursive
-          test -f libs/hbb_common/Cargo.toml
           cargo install cargo-expand --version ${{ env.CARGO_EXPAND_VERSION }} --locked
           cargo install flutter_rust_bridge_codegen --version ${{ env.FLUTTER_RUST_BRIDGE_VERSION }} --features "uuid" --locked
           if [[ "${{ matrix.job.flutter-version }}" == "3.22.3" ]]; then
@@ -108,10 +102,6 @@ jobs:
         run: |
           ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/macos/Runner/bridge_generated.h
           cp ./flutter/macos/Runner/bridge_generated.h ./flutter/ios/Runner/bridge_generated.h
-
-      - name: Patch FoxxDesk bridge compatibility
-        shell: bash
-        run: python3 scripts/fix_generated_bridge_compat.py
 
       - name: Upload Artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

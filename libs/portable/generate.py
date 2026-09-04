@@ -39,7 +39,7 @@ def generate_md5_table(folder: str, level) -> dict:
 def write_package_metadata(md5_table: dict, output_folder: str, exe: str):
     output_path = os.path.join(output_folder, "data.bin")
     with open(output_path, "wb") as f:
-        f.write("foxxdesk".encode(encoding=encoding))
+        f.write("rustdesk".encode(encoding=encoding))
         for path in md5_table.keys():
             (compressed_data, md5_code) = md5_table[path]
             data_length = len(compressed_data)
@@ -54,7 +54,7 @@ def write_package_metadata(md5_table: dict, output_folder: str, exe: str):
             # md5 code
             f.write(md5_code)
         # end
-        f.write("foxxdesk".encode(encoding=encoding))
+        f.write("rustdesk".encode(encoding=encoding))
         # executable
         f.write(exe.encode(encoding='utf-8'))
     print(f"Metadata has been written to {output_path}")
@@ -76,8 +76,8 @@ def build_portable(output_folder: str, target: str):
     finally:
         os.chdir(current_dir)
 
-# Linux: python3 generate.py -f ../foxxdesk-portable-packer/test -o . -e ./test/main.py
-# Windows: python3 .\generate.py -f ..\foxxdesk\flutter\build\windows\runner\Debug\ -o . -e ..\foxxdesk\flutter\build\windows\runner\Debug\foxxdesk.exe
+# Linux: python3 generate.py -f ../rustdesk-portable-packer/test -o . -e ./test/main.py
+# Windows: python3 .\generate.py -f ..\rustdesk\flutter\build\windows\runner\Debug\ -o . -e ..\rustdesk\flutter\build\windows\runner\Debug\rustdesk.exe
 
 
 if __name__ == '__main__':
@@ -87,76 +87,24 @@ if __name__ == '__main__':
     parser.add_option("-o", "--output", dest="output_folder",
                       help="the root of portable packer project, default is './'")
     parser.add_option("-e", "--executable", dest="executable",
-                      help="specify startup file in --folder, default is foxxdesk.exe")
+                      help="specify startup file in --folder, default is rustdesk.exe")
     parser.add_option("-t", "--target", dest="target",
                       help="the target used by cargo")
     parser.add_option("-l", "--level", dest="level", type="int",
                       help="compression level, default is 11, highest", default=11)
     (options, args) = parser.parse_args()
-    folder = options.folder or './foxxdesk'
+    folder = options.folder or './rustdesk'
     output_folder = os.path.abspath(options.output_folder or './')
 
     if not options.executable:
-        options.executable = 'foxxdesk.exe'
+        options.executable = 'rustdesk.exe'
     if not options.executable.startswith(folder):
         options.executable = folder + '/' + options.executable
-    folder_abs = os.path.abspath(folder)
-    requested_exe_abs = os.path.abspath(options.executable)
-
-    # FoxxDesk portable packer path guard v17.
-    # GitHub Actions on Windows may mix /d/a/... and D:\a\... paths, and
-    # older workflow lines may still pass ../../rustdesk/rustdesk.exe while
-    # -f already points to ../../foxxdesk/. Only package an executable that is
-    # actually inside the source folder.
-    def _is_inside_source(path: str) -> bool:
-        try:
-            folder_norm = os.path.normcase(os.path.normpath(folder_abs))
-            path_norm = os.path.normcase(os.path.normpath(path))
-            return os.path.commonpath([folder_norm, path_norm]) == folder_norm
-        except ValueError:
-            return False
-
-    fallback_names = []
-    requested_name = os.path.basename(requested_exe_abs)
-    if requested_name:
-        fallback_names.append(requested_name)
-    fallback_names += ["foxxdesk.exe", "FoxxDesk.exe", "rustdesk.exe", "RustDesk.exe"]
-
-    exe_abs = None
-    if _is_inside_source(requested_exe_abs) and os.path.isfile(requested_exe_abs):
-        exe_abs = requested_exe_abs
-    else:
-        seen_names = set()
-        for name in fallback_names:
-            if not name or name in seen_names:
-                continue
-            seen_names.add(name)
-            candidate = os.path.join(folder_abs, name)
-            if os.path.isfile(candidate):
-                if os.path.abspath(candidate) != requested_exe_abs:
-                    print(f"Executable requested as {requested_exe_abs}; using source executable {candidate}")
-                exe_abs = candidate
-                break
-
-    if exe_abs is None:
-        if not _is_inside_source(requested_exe_abs):
-            print("The executable must locate in source folder")
-            print(f"  source folder: {folder_abs}")
-            print(f"  executable:    {requested_exe_abs}")
-            print("  tried inside source folder:")
-            for name in dict.fromkeys(fallback_names):
-                print(f"  - {os.path.join(folder_abs, name)}")
-        else:
-            print(f"Executable not found: {requested_exe_abs}")
-        if os.path.isdir(folder_abs):
-            print("Source folder contents:")
-            for item in sorted(os.listdir(folder_abs)):
-                print(f"  - {item}")
-        else:
-            print(f"Source folder does not exist: {folder_abs}")
+    exe: str = os.path.abspath(options.executable)
+    if not exe.startswith(os.path.abspath(folder)):
+        print("The executable must locate in source folder")
         exit(-1)
-
-    exe = './' + os.path.relpath(exe_abs, folder_abs).replace(os.sep, '/')
+    exe = '.' + exe[len(os.path.abspath(folder)):]
     print("Executable path: " + exe)
     print("Compression level: " + str(options.level))
     md5_table = generate_md5_table(folder, options.level)
