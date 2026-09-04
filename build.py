@@ -14,7 +14,7 @@ from pathlib import Path
 windows = platform.platform().startswith('Windows')
 osx = platform.platform().startswith(
     'Darwin') or platform.platform().startswith("macOS")
-hbb_name = 'rustdesk' + ('.exe' if windows else '')
+hbb_name = 'foxxdesk' + ('.exe' if windows else '')
 exe_path = 'target/release/' + hbb_name
 if windows:
     win_arch = 'arm64' if platform.machine().lower() in ('arm64', 'aarch64') else 'x64'
@@ -24,6 +24,10 @@ elif osx:
 else:
     flutter_build_dir = 'build/linux/x64/release/bundle/'
 flutter_build_dir_2 = f'flutter/{flutter_build_dir}'
+APP_DISPLAY_NAME = os.environ.get("APP_DISPLAY_NAME", "FoxxDesk")
+APP_SLUG = os.environ.get("APP_SLUG", "foxxdesk")
+APP_EXE = APP_SLUG + (".exe" if windows else "")
+UPSTREAM_SLUG = "foxxdesk"
 skip_cargo = False
 
 
@@ -183,7 +187,7 @@ def generate_build_script_for_docker():
             vcpkg/bootstrap-vcpkg.sh
             popd
             $VCPKG_ROOT/vcpkg install --x-install-root="$VCPKG_ROOT/installed"
-            # build rustdesk
+            # build foxxdesk
             ./build.py --flutter --hwcodec
         ''')
     system2("chmod +x /tmp/build.sh")
@@ -293,13 +297,13 @@ def generate_control_file(version):
     control_file_path = "../res/DEBIAN/control"
     system2('/bin/rm -rf %s' % control_file_path)
 
-    content = """Package: rustdesk
+    content = """Package: foxxdesk
 Section: net
 Priority: optional
 Version: %s
 Architecture: %s
-Maintainer: rustdesk <info@rustdesk.com>
-Homepage: https://rustdesk.com
+Maintainer: foxxdesk <info@foxxdesk.com>
+Homepage: https://foxxdesk.mguimaraesn.dev
 Depends: libgtk-3-0t64 | libgtk-3-0, libxcb-randr0, libxdo3 | libxdo4, libxfixes3, libxcb-shape0, libxcb-xfixes0, libasound2t64 | libasound2, libsystemd0, curl, libva2, libva-drm2, libva-x11-2, libgstreamer-plugins-base1.0-0, libpam0g, gstreamer1.0-pipewire%s
 Recommends: libayatana-appindicator3-1
 Description: A remote control software.
@@ -314,6 +318,8 @@ def ffi_bindgen_function_refactor():
     # workaround ffigen
     system2(
         'sed -i "s/ffi.NativeFunction<ffi.Bool Function(DartPort/ffi.NativeFunction<ffi.Uint8 Function(DartPort/g" flutter/lib/generated_bridge.dart')
+    if os.path.exists("scripts/fix_generated_bridge_compat.py"):
+        system2("python3 scripts/fix_generated_bridge_compat.py")
 
 
 def build_flutter_deb(version, features):
@@ -323,82 +329,84 @@ def build_flutter_deb(version, features):
     os.chdir('flutter')
     system2('flutter build linux --release')
     system2('mkdir -p tmpdeb/usr/bin/')
-    system2('mkdir -p tmpdeb/usr/share/rustdesk')
-    system2('mkdir -p tmpdeb/etc/rustdesk/')
+    system2('mkdir -p tmpdeb/usr/share/foxxdesk')
+    system2('mkdir -p tmpdeb/etc/foxxdesk/')
     system2('mkdir -p tmpdeb/etc/pam.d/')
-    system2('mkdir -p tmpdeb/usr/share/rustdesk/files/systemd/')
+    system2('mkdir -p tmpdeb/usr/share/foxxdesk/files/systemd/')
     system2('mkdir -p tmpdeb/usr/share/icons/hicolor/256x256/apps/')
     system2('mkdir -p tmpdeb/usr/share/icons/hicolor/scalable/apps/')
     system2('mkdir -p tmpdeb/usr/share/applications/')
     system2('mkdir -p tmpdeb/usr/share/polkit-1/actions')
-    system2('rm tmpdeb/usr/bin/rustdesk || true')
+    system2('rm -f tmpdeb/usr/bin/foxxdesk')
     system2(
-        f'cp -r {flutter_build_dir}/* tmpdeb/usr/share/rustdesk/')
+        f'cp -r {flutter_build_dir}/* tmpdeb/usr/share/foxxdesk/')
     system2(
-        'cp ../res/rustdesk.service tmpdeb/usr/share/rustdesk/files/systemd/')
+        'cp ../res/foxxdesk.service tmpdeb/usr/share/foxxdesk/files/systemd/')
     system2(
-        'cp ../res/128x128@2x.png tmpdeb/usr/share/icons/hicolor/256x256/apps/rustdesk.png')
+        'cp ../res/128x128@2x.png tmpdeb/usr/share/icons/hicolor/256x256/apps/foxxdesk.png')
     system2(
-        'cp ../res/scalable.svg tmpdeb/usr/share/icons/hicolor/scalable/apps/rustdesk.svg')
+        'cp ../res/scalable.svg tmpdeb/usr/share/icons/hicolor/scalable/apps/foxxdesk.svg')
     system2(
-        'cp ../res/rustdesk.desktop tmpdeb/usr/share/applications/rustdesk.desktop')
+        'cp ../res/foxxdesk.desktop tmpdeb/usr/share/applications/foxxdesk.desktop')
     system2(
-        'cp ../res/rustdesk-link.desktop tmpdeb/usr/share/applications/rustdesk-link.desktop')
+        'cp ../res/foxxdesk-link.desktop tmpdeb/usr/share/applications/foxxdesk-link.desktop')
     system2(
-        'cp ../res/startwm.sh tmpdeb/etc/rustdesk/')
+        'cp ../res/startwm.sh tmpdeb/etc/foxxdesk/')
     system2(
-        'cp ../res/xorg.conf tmpdeb/etc/rustdesk/')
+        'cp ../res/xorg.conf tmpdeb/etc/foxxdesk/')
     system2(
-        'cp ../res/pam.d/rustdesk.debian tmpdeb/etc/pam.d/rustdesk')
+        'cp ../res/pam.d/foxxdesk.debian tmpdeb/etc/pam.d/foxxdesk')
     system2(
-        "echo \"#!/bin/sh\" >> tmpdeb/usr/share/rustdesk/files/polkit && chmod a+x tmpdeb/usr/share/rustdesk/files/polkit")
+        "echo \"#!/bin/sh\" >> tmpdeb/usr/share/foxxdesk/files/polkit && chmod a+x tmpdeb/usr/share/foxxdesk/files/polkit")
 
     system2('mkdir -p tmpdeb/DEBIAN')
     generate_control_file(version)
     system2('cp -a ../res/DEBIAN/* tmpdeb/DEBIAN/')
+    system2('chmod 755 tmpdeb/DEBIAN/preinst tmpdeb/DEBIAN/postinst tmpdeb/DEBIAN/prerm tmpdeb/DEBIAN/postrm 2>/dev/null || true')
     md5_file_folder("tmpdeb/")
-    system2('dpkg-deb -b tmpdeb rustdesk.deb;')
+    system2('dpkg-deb -b tmpdeb foxxdesk.deb;')
 
     system2('/bin/rm -rf tmpdeb/')
     system2('/bin/rm -rf ../res/DEBIAN/control')
-    os.rename('rustdesk.deb', '../rustdesk-%s.deb' % version)
+    os.rename('foxxdesk.deb', '../foxxdesk-%s.deb' % version)
     os.chdir("..")
 
 
 def build_deb_from_folder(version, binary_folder):
     os.chdir('flutter')
     system2('mkdir -p tmpdeb/usr/bin/')
-    system2('mkdir -p tmpdeb/usr/share/rustdesk')
-    system2('mkdir -p tmpdeb/usr/share/rustdesk/files/systemd/')
+    system2('mkdir -p tmpdeb/usr/share/foxxdesk')
+    system2('mkdir -p tmpdeb/usr/share/foxxdesk/files/systemd/')
     system2('mkdir -p tmpdeb/usr/share/icons/hicolor/256x256/apps/')
     system2('mkdir -p tmpdeb/usr/share/icons/hicolor/scalable/apps/')
     system2('mkdir -p tmpdeb/usr/share/applications/')
     system2('mkdir -p tmpdeb/usr/share/polkit-1/actions')
-    system2('rm tmpdeb/usr/bin/rustdesk || true')
+    system2('rm -f tmpdeb/usr/bin/foxxdesk')
     system2(
-        f'cp -r ../{binary_folder}/* tmpdeb/usr/share/rustdesk/')
+        f'cp -r ../{binary_folder}/* tmpdeb/usr/share/foxxdesk/')
     system2(
-        'cp ../res/rustdesk.service tmpdeb/usr/share/rustdesk/files/systemd/')
+        'cp ../res/foxxdesk.service tmpdeb/usr/share/foxxdesk/files/systemd/')
     system2(
-        'cp ../res/128x128@2x.png tmpdeb/usr/share/icons/hicolor/256x256/apps/rustdesk.png')
+        'cp ../res/128x128@2x.png tmpdeb/usr/share/icons/hicolor/256x256/apps/foxxdesk.png')
     system2(
-        'cp ../res/scalable.svg tmpdeb/usr/share/icons/hicolor/scalable/apps/rustdesk.svg')
+        'cp ../res/scalable.svg tmpdeb/usr/share/icons/hicolor/scalable/apps/foxxdesk.svg')
     system2(
-        'cp ../res/rustdesk.desktop tmpdeb/usr/share/applications/rustdesk.desktop')
+        'cp ../res/foxxdesk.desktop tmpdeb/usr/share/applications/foxxdesk.desktop')
     system2(
-        'cp ../res/rustdesk-link.desktop tmpdeb/usr/share/applications/rustdesk-link.desktop')
+        'cp ../res/foxxdesk-link.desktop tmpdeb/usr/share/applications/foxxdesk-link.desktop')
     system2(
-        "echo \"#!/bin/sh\" >> tmpdeb/usr/share/rustdesk/files/polkit && chmod a+x tmpdeb/usr/share/rustdesk/files/polkit")
+        "echo \"#!/bin/sh\" >> tmpdeb/usr/share/foxxdesk/files/polkit && chmod a+x tmpdeb/usr/share/foxxdesk/files/polkit")
 
     system2('mkdir -p tmpdeb/DEBIAN')
     generate_control_file(version)
     system2('cp -a ../res/DEBIAN/* tmpdeb/DEBIAN/')
+    system2('chmod 755 tmpdeb/DEBIAN/preinst tmpdeb/DEBIAN/postinst tmpdeb/DEBIAN/prerm tmpdeb/DEBIAN/postrm 2>/dev/null || true')
     md5_file_folder("tmpdeb/")
-    system2('dpkg-deb -b tmpdeb rustdesk.deb;')
+    system2('dpkg-deb -b tmpdeb foxxdesk.deb;')
 
     system2('/bin/rm -rf tmpdeb/')
     system2('/bin/rm -rf ../res/DEBIAN/control')
-    os.rename('rustdesk.deb', '../rustdesk-%s.deb' % version)
+    os.rename('foxxdesk.deb', '../foxxdesk-%s.deb' % version)
     os.chdir("..")
 
 
@@ -417,11 +425,11 @@ def build_flutter_dmg(version, features):
     mac_arch = 'arm64' if platform.machine().lower() in ('arm64', 'aarch64') else 'x86_64'
     system2(
         f'FLUTTER_XCODE_ARCHS={mac_arch} FLUTTER_XCODE_ONLY_ACTIVE_ARCH=YES flutter build macos --release')
-    system2('cp -rf ../target/release/service ./build/macos/Build/Products/Release/RustDesk.app/Contents/MacOS/')
+    system2('cp -rf ../target/release/service ./build/macos/Build/Products/Release/FoxxDesk.app/Contents/MacOS/')
     '''
     system2(
-        "create-dmg --volname \"RustDesk Installer\" --window-pos 200 120 --window-size 800 400 --icon-size 100 --app-drop-link 600 185 --icon RustDesk.app 200 190 --hide-extension RustDesk.app rustdesk.dmg ./build/macos/Build/Products/Release/RustDesk.app")
-    os.rename("rustdesk.dmg", f"../rustdesk-{version}.dmg")
+        "create-dmg --volname \"FoxxDesk Installer\" --window-pos 200 120 --window-size 800 400 --icon-size 100 --app-drop-link 600 185 --icon FoxxDesk.app 200 190 --hide-extension FoxxDesk.app foxxdesk.dmg ./build/macos/Build/Products/Release/FoxxDesk.app")
+    os.rename("foxxdesk.dmg", f"../foxxdesk-{version}.dmg")
     '''
     os.chdir("..")
 
@@ -453,19 +461,19 @@ def build_flutter_windows(version, features, skip_portable_pack):
     os.chdir('libs/portable')
     system2('pip3 install -r requirements.txt')
     system2(
-        f'python3 ./generate.py -f ../../{flutter_build_dir_2} -o . -e ../../{flutter_build_dir_2}/rustdesk.exe')
+        f'python3 ./generate.py -f ../../{flutter_build_dir_2} -o . -e {APP_SLUG}.exe')
     os.chdir('../..')
     if os.path.exists('./rustdesk_portable.exe'):
-        os.replace('./target/release/rustdesk-portable-packer.exe',
+        os.replace('./target/release/foxxdesk-portable-packer.exe',
                    './rustdesk_portable.exe')
     else:
-        os.rename('./target/release/rustdesk-portable-packer.exe',
+        os.rename('./target/release/foxxdesk-portable-packer.exe',
                   './rustdesk_portable.exe')
     print(
         f'output location: {os.path.abspath(os.curdir)}/rustdesk_portable.exe')
-    os.rename('./rustdesk_portable.exe', f'./rustdesk-{version}-install.exe')
+    os.rename('./rustdesk_portable.exe', f'./foxxdesk-{version}-install.exe')
     print(
-        f'output location: {os.path.abspath(os.curdir)}/rustdesk-{version}-install.exe')
+        f'output location: {os.path.abspath(os.curdir)}/foxxdesk-{version}-install.exe')
 
 
 def main():
@@ -502,24 +510,24 @@ def main():
             build_flutter_windows(version, features, args.skip_portable_pack)
             return
         system2('cargo build --locked --release --features ' + features)
-        # system2('upx.exe target/release/rustdesk.exe')
-        system2('mv target/release/rustdesk.exe target/release/RustDesk.exe')
+        # system2('upx.exe target/release/foxxdesk.exe')
+        system2('mv target/release/foxxdesk.exe target/release/FoxxDesk.exe')
         pa = os.environ.get('P')
         if pa:
             # https://certera.com/kb/tutorial-guide-for-safenet-authentication-client-for-code-signing/
             system2(
                 f'signtool sign /a /v /p {pa} /debug /f .\\cert.pfx /t http://timestamp.digicert.com  '
-                'target\\release\\rustdesk.exe')
+                'target\\release\\foxxdesk.exe')
         else:
             print('Not signed')
         os.makedirs(res_dir, exist_ok=True)
         system2(
-            f'cp -rf target/release/RustDesk.exe {res_dir}')
+            f'cp -rf target/release/FoxxDesk.exe {res_dir}')
         os.chdir('libs/portable')
         system2('pip3 install -r requirements.txt')
         system2(
-            f'python3 ./generate.py -f ../../{res_dir} -o . -e ../../{res_dir}/rustdesk-{version}-win7-install.exe')
-        system2(f'mv ../../{res_dir}/rustdesk-{version}-win7-install.exe ../..')
+            f'python3 ./generate.py -f ../../{res_dir} -o . -e FoxxDesk.exe')
+        system2(f'mv ../../{res_dir}/foxxdesk-{version}-win7-install.exe ../..')
     elif os.path.isfile('/usr/bin/pacman'):
         # pacman -S -needed base-devel
         system2("sed -i 's/pkgver=.*/pkgver=%s/g' res/PKGBUILD" % version)
@@ -528,32 +536,32 @@ def main():
         else:
             system2('cargo build --locked --release --features ' + features)
             system2('git checkout src/ui/common.tis')
-            system2('strip target/release/rustdesk')
+            system2('strip target/release/foxxdesk')
             system2('ln -s res/pacman_install && ln -s res/PKGBUILD')
             system2('HBB=`pwd` makepkg -f')
-        system2('mv rustdesk-%s-0-x86_64.pkg.tar.zst rustdesk-%s-manjaro-arch.pkg.tar.zst' % (
+        system2('mv foxxdesk-%s-0-x86_64.pkg.tar.zst foxxdesk-%s-manjaro-arch.pkg.tar.zst' % (
             version, version))
-        # pacman -U ./rustdesk.pkg.tar.zst
+        # pacman -U ./foxxdesk.pkg.tar.zst
     elif os.path.isfile('/usr/bin/yum'):
         system2('cargo build --locked --release --features ' + features)
-        system2('strip target/release/rustdesk')
+        system2('strip target/release/foxxdesk')
         system2(
             "sed -i 's/Version:    .*/Version:    %s/g' res/rpm.spec" % version)
         system2('HBB=`pwd` rpmbuild -ba res/rpm.spec')
         system2(
-            'mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-%s-0.x86_64.rpm ./rustdesk-%s-fedora28-centos8.rpm' % (
+            'mv $HOME/rpmbuild/RPMS/x86_64/foxxdesk-%s-0.x86_64.rpm ./foxxdesk-%s-fedora28-centos8.rpm' % (
                 version, version))
-        # yum localinstall rustdesk.rpm
+        # yum localinstall foxxdesk.rpm
     elif os.path.isfile('/usr/bin/zypper'):
         system2('cargo build --locked --release --features ' + features)
-        system2('strip target/release/rustdesk')
+        system2('strip target/release/foxxdesk')
         system2(
             "sed -i 's/Version:    .*/Version:    %s/g' res/rpm-suse.spec" % version)
         system2('HBB=`pwd` rpmbuild -ba res/rpm-suse.spec')
         system2(
-            'mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-%s-0.x86_64.rpm ./rustdesk-%s-suse.rpm' % (
+            'mv $HOME/rpmbuild/RPMS/x86_64/foxxdesk-%s-0.x86_64.rpm ./foxxdesk-%s-suse.rpm' % (
                 version, version))
-        # yum localinstall rustdesk.rpm
+        # yum localinstall foxxdesk.rpm
     else:
         if flutter:
             if osx:
@@ -561,15 +569,15 @@ def main():
                 pass
             else:
                 # system2(
-                #     'mv target/release/bundle/deb/rustdesk*.deb ./flutter/rustdesk.deb')
+                #     'mv target/release/bundle/deb/foxxdesk*.deb ./flutter/foxxdesk.deb')
                 build_flutter_deb(version, features)
         else:
             system2('cargo --locked bundle --release --features ' + features)
             if osx:
                 system2(
-                    'strip target/release/bundle/osx/RustDesk.app/Contents/MacOS/rustdesk')
+                    'strip target/release/bundle/osx/FoxxDesk.app/Contents/MacOS/foxxdesk')
                 system2(
-                    'cp libsciter.dylib target/release/bundle/osx/RustDesk.app/Contents/MacOS/')
+                    'cp libsciter.dylib target/release/bundle/osx/FoxxDesk.app/Contents/MacOS/')
                 # https://github.com/sindresorhus/create-dmg
                 system2('/bin/rm -rf *.dmg')
                 pa = os.environ.get('P')
@@ -577,65 +585,67 @@ def main():
                     system2('''
     # buggy: rcodesign sign ... path/*, have to sign one by one
     # install rcodesign via cargo install apple-codesign
-    #rcodesign sign --p12-file ~/.p12/rustdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./target/release/bundle/osx/RustDesk.app/Contents/MacOS/rustdesk
-    #rcodesign sign --p12-file ~/.p12/rustdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./target/release/bundle/osx/RustDesk.app/Contents/MacOS/libsciter.dylib
-    #rcodesign sign --p12-file ~/.p12/rustdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./target/release/bundle/osx/RustDesk.app
+    #rcodesign sign --p12-file ~/.p12/foxxdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./target/release/bundle/osx/FoxxDesk.app/Contents/MacOS/foxxdesk
+    #rcodesign sign --p12-file ~/.p12/foxxdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./target/release/bundle/osx/FoxxDesk.app/Contents/MacOS/libsciter.dylib
+    #rcodesign sign --p12-file ~/.p12/foxxdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./target/release/bundle/osx/FoxxDesk.app
     # goto "Keychain Access" -> "My Certificates" for below id which starts with "Developer ID Application:"
-    codesign -s "Developer ID Application: {0}" --force --options runtime  ./target/release/bundle/osx/RustDesk.app/Contents/MacOS/*
-    codesign -s "Developer ID Application: {0}" --force --options runtime  ./target/release/bundle/osx/RustDesk.app
+    codesign -s "Developer ID Application: {0}" --force --options runtime  ./target/release/bundle/osx/FoxxDesk.app/Contents/MacOS/*
+    codesign -s "Developer ID Application: {0}" --force --options runtime  ./target/release/bundle/osx/FoxxDesk.app
     '''.format(pa))
                 system2(
-                    'create-dmg "RustDesk %s.dmg" "target/release/bundle/osx/RustDesk.app"' % version)
-                os.rename('RustDesk %s.dmg' %
-                          version, 'rustdesk-%s.dmg' % version)
+                    'create-dmg "FoxxDesk %s.dmg" "target/release/bundle/osx/FoxxDesk.app"' % version)
+                os.rename('FoxxDesk %s.dmg' %
+                          version, 'foxxdesk-%s.dmg' % version)
                 if pa:
                     system2('''
     # https://pyoxidizer.readthedocs.io/en/apple-codesign-0.14.0/apple_codesign.html
     # https://pyoxidizer.readthedocs.io/en/stable/tugger_code_signing.html
     # https://developer.apple.com/developer-id/
     # goto xcode and login with apple id, manager certificates (Developer ID Application and/or Developer ID Installer) online there (only download and double click (install) cer file can not export p12 because no private key)
-    #rcodesign sign --p12-file ~/.p12/rustdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./rustdesk-{1}.dmg
-    codesign -s "Developer ID Application: {0}" --force --options runtime ./rustdesk-{1}.dmg
+    #rcodesign sign --p12-file ~/.p12/foxxdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./foxxdesk-{1}.dmg
+    codesign -s "Developer ID Application: {0}" --force --options runtime ./foxxdesk-{1}.dmg
     # https://appstoreconnect.apple.com/access/api
     # https://gregoryszorc.com/docs/apple-codesign/stable/apple_codesign_getting_started.html#apple-codesign-app-store-connect-api-key
     # p8 file is generated when you generate api key (can download only once)
-    rcodesign notary-submit --api-key-path ../.p12/api-key.json  --staple rustdesk-{1}.dmg
-    # verify:  spctl -a -t exec -v /Applications/RustDesk.app
+    rcodesign notary-submit --api-key-path ../.p12/api-key.json  --staple foxxdesk-{1}.dmg
+    # verify:  spctl -a -t exec -v /Applications/FoxxDesk.app
     '''.format(pa, version))
                 else:
                     print('Not signed')
             else:
                 # build deb package
                 system2(
-                    'mv target/release/bundle/deb/rustdesk*.deb ./rustdesk.deb')
-                system2('dpkg-deb -R rustdesk.deb tmpdeb')
-                system2('mkdir -p tmpdeb/usr/share/rustdesk/files/systemd/')
+                    'mv target/release/bundle/deb/foxxdesk*.deb ./foxxdesk.deb')
+                system2('dpkg-deb -R foxxdesk.deb tmpdeb')
+                system2('mkdir -p tmpdeb/usr/share/foxxdesk/files/systemd/')
                 system2('mkdir -p tmpdeb/usr/share/icons/hicolor/256x256/apps/')
                 system2('mkdir -p tmpdeb/usr/share/icons/hicolor/scalable/apps/')
                 system2(
-                    'cp res/rustdesk.service tmpdeb/usr/share/rustdesk/files/systemd/')
+                    'cp res/foxxdesk.service tmpdeb/usr/share/foxxdesk/files/systemd/')
                 system2(
-                    'cp res/128x128@2x.png tmpdeb/usr/share/icons/hicolor/256x256/apps/rustdesk.png')
+                    'cp res/128x128@2x.png tmpdeb/usr/share/icons/hicolor/256x256/apps/foxxdesk.png')
                 system2(
-                    'cp res/scalable.svg tmpdeb/usr/share/icons/hicolor/scalable/apps/rustdesk.svg')
+                    'cp res/scalable.svg tmpdeb/usr/share/icons/hicolor/scalable/apps/foxxdesk.svg')
                 system2(
-                    'cp res/rustdesk.desktop tmpdeb/usr/share/applications/rustdesk.desktop')
+                    'cp res/foxxdesk.desktop tmpdeb/usr/share/applications/foxxdesk.desktop')
                 system2(
-                    'cp res/rustdesk-link.desktop tmpdeb/usr/share/applications/rustdesk-link.desktop')
-                os.system('mkdir -p tmpdeb/etc/rustdesk/')
-                os.system('cp -a res/startwm.sh tmpdeb/etc/rustdesk/')
-                os.system('mkdir -p tmpdeb/etc/X11/rustdesk/')
-                os.system('cp res/xorg.conf tmpdeb/etc/X11/rustdesk/')
+                    'cp res/foxxdesk-link.desktop tmpdeb/usr/share/applications/foxxdesk-link.desktop')
+                os.system('mkdir -p tmpdeb/etc/foxxdesk/')
+                os.system('cp -a res/startwm.sh tmpdeb/etc/foxxdesk/')
+                os.system('mkdir -p tmpdeb/etc/X11/foxxdesk/')
+                os.system('cp res/xorg.conf tmpdeb/etc/X11/foxxdesk/')
                 os.system('cp -a DEBIAN/* tmpdeb/DEBIAN/')
+                os.system('chmod 755 tmpdeb/DEBIAN/preinst tmpdeb/DEBIAN/postinst tmpdeb/DEBIAN/prerm tmpdeb/DEBIAN/postrm 2>/dev/null || true')
                 os.system('mkdir -p tmpdeb/etc/pam.d/')
-                os.system('cp pam.d/rustdesk.debian tmpdeb/etc/pam.d/rustdesk')
-                system2('strip tmpdeb/usr/bin/rustdesk')
-                system2('mkdir -p tmpdeb/usr/share/rustdesk')
-                system2('mv tmpdeb/usr/bin/rustdesk tmpdeb/usr/share/rustdesk/')
-                system2('cp libsciter-gtk.so tmpdeb/usr/share/rustdesk/')
+                os.system('cp pam.d/foxxdesk.debian tmpdeb/etc/pam.d/foxxdesk')
+                system2('[ -f tmpdeb/usr/bin/foxxdesk ] && strip tmpdeb/usr/bin/foxxdesk || true')
+                system2('mkdir -p tmpdeb/usr/share/foxxdesk')
+                system2('[ -f tmpdeb/usr/bin/foxxdesk ] && mv tmpdeb/usr/bin/foxxdesk tmpdeb/usr/share/foxxdesk/ || true')
+                system2('cp libsciter-gtk.so tmpdeb/usr/share/foxxdesk/')
                 md5_file_folder("tmpdeb/")
-                system2('dpkg-deb -b tmpdeb rustdesk.deb; /bin/rm -rf tmpdeb/')
-                os.rename('rustdesk.deb', 'rustdesk-%s.deb' % version)
+                system2('chmod 755 tmpdeb/DEBIAN/preinst tmpdeb/DEBIAN/postinst tmpdeb/DEBIAN/prerm tmpdeb/DEBIAN/postrm 2>/dev/null || true')
+                system2('dpkg-deb -b tmpdeb foxxdesk.deb; /bin/rm -rf tmpdeb/')
+                os.rename('foxxdesk.deb', 'foxxdesk-%s.deb' % version)
 
 
 def md5_file(fn):

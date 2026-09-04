@@ -1,0 +1,13 @@
+2026-09-04 20:31:21,216 [INFO] FoxxDesk rebrand v35-resilient-upstream-ci-2026-09-04 iniciado
+2026-09-04 20:31:21,216 [INFO] Target: /home/mateus/_Projects/FoxxDesk
+2026-09-04 20:31:21,217 [INFO] Modo: apply | profile=full | scan_all=False
+2026-09-04 20:31:21,217 [INFO] Icon assets: False | source=res/icon.png
+2026-09-04 20:31:21,218 [INFO] Etapa: hbb_common pulado por --skip-hbb-common-download
+2026-09-04 20:31:21,219 [INFO] Etapa: criar/atualizar helpers e workflow FoxxDesk
+2026-09-04 20:31:21,220 [INFO] Etapa: aplicar renomeações seguras e remover obsoletos
+2026-09-04 20:31:21,234 [INFO] Etapa: processar 279 arquivo(s) candidato(s)
+2026-09-04 20:31:23,026 [INFO] Etapa: reforçar helper bridge e permissões executáveis
+2026-09-04 20:31:23,032 [INFO] Etapa: icon assets V34
+2026-09-04 20:31:23,033 [INFO] Icon assets: pulado porque --apply-icon-assets não foi informado
+2026-09-04 20:31:23,033 [INFO] Etapa: validação final de segurança/build
+2026-09-04 20:31:23,159 [INFO] Resumo final: alterados=245 pendencias=0 nao_encontrados=0 relatorio=/home/mateus/_Projects/FoxxDesk/rebrand_report.md
