@@ -140,7 +140,7 @@ EXPECTED_CONTENTS_JSON_PATH = "flutter/ios/Runner/Assets.xcassets/AppIcon.appico
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate all system logo assets from res/icon.png")
     parser.add_argument("--target", default=".", help="Project root. Default: current directory")
-    parser.add_argument("--source", default="res/icon.png", help="Source image relative to target. Default: res/icon.png")
+    parser.add_argument("--source", default="scripts/icon.png", help="Source image relative to target. Default: res/icon.png")
     parser.add_argument("--ios-background", default="#FFFFFF", help="Background used when flattening iOS/RGB icons. Default: #FFFFFF")
     parser.add_argument("--update-ios-contents", action="store_true", help="Also normalize iOS AppIcon Contents.json")
     mode = parser.add_mutually_exclusive_group(required=True)
