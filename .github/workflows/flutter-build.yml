@@ -44,7 +44,7 @@ env:
   # 2. Update the `VCPKG_COMMIT_ID` in `ci.yml` and `playground.yml`.
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
   ARMV7_VCPKG_COMMIT_ID: "6f29f12e82a8293156836ad81cc9bf5af41fe836" # 2025.01.13, got "/opt/artifacts/vcpkg/vcpkg: No such file or directory" with latest version
-  VERSION: "1.4.8"
+  VERSION: "1.4.9"
   NDK_VERSION: "r28c"
   #signing keys env variable checks
   ANDROID_SIGNING_KEY: "${{ secrets.ANDROID_SIGNING_KEY }}"
@@ -256,41 +256,35 @@ jobs:
           # Windows: build RustDesk
           # --hwcodec is shared by all Windows targets; per-target extras (e.g. --vram) come from the matrix
           python3 .\build.py --portable --flutter --skip-portable-pack --hwcodec ${{ matrix.job.build-args }}
-          mv ./flutter/build/windows/${{ matrix.job.flutter-arch }}/runner/Release ./foxxdesk
+          mv ./flutter/build/windows/${{ matrix.job.flutter-arch }}/runner/Release ./rustdesk
 
-          # Download usbmmidd_v2.zip and extract it to ./foxxdesk
+          # Download usbmmidd_v2.zip and extract it to ./rustdesk
           Invoke-WebRequest -Uri https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip -OutFile usbmmidd_v2.zip
           Expand-Archive usbmmidd_v2.zip -DestinationPath .
           Remove-Item -Path usbmmidd_v2\Win32 -Recurse
           Remove-Item -Path "usbmmidd_v2\deviceinstaller64.exe", "usbmmidd_v2\deviceinstaller.exe", "usbmmidd_v2\usbmmidd.bat"
-          mv -Force .\usbmmidd_v2 ./foxxdesk
+          mv -Force .\usbmmidd_v2 ./rustdesk
 
-          # Download printer driver files and extract them to ./foxxdesk
+          # Download printer driver files and extract them to ./rustdesk
           try {
-            $upstreamPrinterOrg = "rust" + "desk"
-            $driverZip = "${upstreamPrinterOrg}_printer_driver_v4-1.4.zip"
-            $driverExtractName = [System.IO.Path]::GetFileNameWithoutExtension($driverZip)
-            Invoke-WebRequest -Uri "https://github.com/$upstreamPrinterOrg/hbb_common/releases/download/driver/$driverZip" -OutFile $driverZip
-            Invoke-WebRequest -Uri "https://github.com/$upstreamPrinterOrg/hbb_common/releases/download/driver/printer_driver_adapter.zip" -OutFile printer_driver_adapter.zip
-            Invoke-WebRequest -Uri "https://github.com/$upstreamPrinterOrg/hbb_common/releases/download/driver/sha256sums" -OutFile sha256sums
+            Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/rustdesk_printer_driver_v4-1.4.zip -OutFile rustdesk_printer_driver_v4-1.4.zip
+            Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/printer_driver_adapter.zip -OutFile printer_driver_adapter.zip
+            Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/sha256sums -OutFile sha256sums
 
             # Check and move the files
-            $driverZipRegex = [regex]::Escape($driverZip)
-            $checksumPattern = '^([a-fA-F0-9]{64}) \*' + $driverZipRegex + '$'
-            $checksum_driver = (Select-String -Path .\sha256sums -Pattern $checksumPattern).Matches.Groups[1].Value
-            $downloadsum_driver = Get-FileHash -Path $driverZip -Algorithm SHA256
+            $checksum_driver = (Select-String -Path .\sha256sums -Pattern '^([a-fA-F0-9]{64}) \*rustdesk_printer_driver_v4-1.4\.zip$').Matches.Groups[1].Value
+            $downloadsum_driver = Get-FileHash -Path rustdesk_printer_driver_v4-1.4.zip -Algorithm SHA256
             $checksum_adapter = (Select-String -Path .\sha256sums -Pattern '^([a-fA-F0-9]{64}) \*printer_driver_adapter\.zip$').Matches.Groups[1].Value
             $downloadsum_adapter = Get-FileHash -Path printer_driver_adapter.zip -Algorithm SHA256
             if ($checksum_driver -eq $downloadsum_driver.Hash -and $checksum_adapter -eq $downloadsum_adapter.Hash) {
-                Write-Output "$driverZip, checksums match, extract the file."
-                Expand-Archive $driverZip -DestinationPath .
-                mkdir ./foxxdesk/drivers
-                $driverExtractDir = Join-Path "." $driverExtractName
-                Move-Item -Force $driverExtractDir ".\foxxdesk\drivers\FoxxDeskPrinterDriver"
+                Write-Output "rustdesk_printer_driver_v4-1.4, checksums match, extract the file."
+                Expand-Archive rustdesk_printer_driver_v4-1.4.zip -DestinationPath .
+                mkdir ./rustdesk/drivers
+                mv -Force .\rustdesk_printer_driver_v4-1.4 ./rustdesk/drivers/RustDeskPrinterDriver
                 Expand-Archive printer_driver_adapter.zip -DestinationPath .
-                mv -Force .\printer_driver_adapter.dll ./foxxdesk
+                mv -Force .\printer_driver_adapter.dll ./rustdesk
             } elseif ($checksum_driver -ne $downloadsum_driver.Hash) {
-                Write-Output "$driverZip, checksums do not match, ignore the file."
+                Write-Output "rustdesk_printer_driver_v4-1.4, checksums do not match, ignore the file."
             } else {
                 Write-Output "printer_driver_adapter.dll, checksums do not match, ignore the file."
             }
@@ -319,21 +313,21 @@ jobs:
         if: ${{ inputs.upload-artifact }}
         with:
           name: ${{ matrix.job.arch == 'aarch64' && 'topmostwindow-artifacts-ARM64' || 'topmostwindow-artifacts-x64' }}
-          path: "./foxxdesk"
+          path: "./rustdesk"
 
       - name: Upload unsigned
         if: env.UPLOAD_ARTIFACT == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: foxxdesk-unsigned-windows-${{ matrix.job.arch }}
-          path: foxxdesk
+          name: rustdesk-unsigned-windows-${{ matrix.job.arch }}
+          path: rustdesk
 
       - name: Sign rustdesk files
         if: env.UPLOAD_ARTIFACT == 'true' && env.SIGN_BASE_URL != '-2'
         shell: bash
         run: |
           pip3 install requests argparse
-          BASE_URL=${{ env.SIGN_BASE_URL }} SECRET_KEY=${{ secrets.SIGN_SECRET_KEY }} python3 res/job.py sign_files ./foxxdesk/
+          BASE_URL=${{ env.SIGN_BASE_URL }} SECRET_KEY=${{ secrets.SIGN_SECRET_KEY }} python3 res/job.py sign_files ./rustdesk/
 
       - name: Build self-extracted executable
         shell: bash
@@ -342,17 +336,11 @@ jobs:
           sed -i '/dpiAware/d' res/manifest.xml
           pushd ./libs/portable
           pip3 install -r requirements.txt
-          python3 ./generate.py -f ../../foxxdesk/ -o . -e foxxdesk.exe
+          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
           popd
           mkdir -p ./SignOutput
-          portable_packer="./target/release/foxxdesk-portable-packer.exe"
-          if [ ! -f "$portable_packer" ]; then
-            echo "Missing $portable_packer"
-            echo "Available target/release executables:"
-            ls -la ./target/release/*.exe ./target/release/*portable* 2>/dev/null || true
-            exit 1
-          fi
-          mv "$portable_packer" ./SignOutput/foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.exe
+          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.exe
+
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
 
@@ -363,13 +351,13 @@ jobs:
         if: env.UPLOAD_ARTIFACT == 'true'
         run: |
           pushd ./res/msi
-          python preprocess.py --arp -d ../../foxxdesk
+          python preprocess.py --arp -d ../../rustdesk
           nuget restore msi.sln
           $msiPlatform = if ('${{ matrix.job.arch }}' -eq 'aarch64') { 'ARM64' } else { 'x64' }
           msbuild msi.sln -p:Configuration=Release -p:Platform=$msiPlatform /p:TargetVersion=Windows10
           $msi = Get-ChildItem ./Package/bin/*/Release/en-us/Package.msi | Select-Object -First 1
-          mv $msi.FullName ../../SignOutput/foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.msi
-          sha256sum ../../SignOutput/foxxdesk-*.msi
+          mv $msi.FullName ../../SignOutput/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.msi
+          sha256sum ../../SignOutput/rustdesk-*.msi
 
       - name: Sign rustdesk self-extracted file
         if: env.UPLOAD_ARTIFACT == 'true' && env.SIGN_BASE_URL != '-2'
@@ -384,8 +372,8 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            ./SignOutput/foxxdesk-*.msi
-            ./SignOutput/foxxdesk-*.exe
+            ./SignOutput/rustdesk-*.msi
+            ./SignOutput/rustdesk-*.exe
 
   # The fallback for the flutter version, we use Sciter for 32bit Windows.
   build-for-windows-sciter:
@@ -472,7 +460,7 @@ jobs:
           cargo update -p sciter-rs --precise 674e07d3066ca9a92ced3816203ab6b652629d1e
           cargo build --locked --features inline,vram,hwcodec --release --bins
           mkdir -p ./Release
-          mv ./target/release/foxxdesk.exe ./Release/foxxdesk.exe
+          mv ./target/release/rustdesk.exe ./Release/rustdesk.exe
           curl -LJ -o ./Release/sciter.dll https://github.com/c-smile/sciter-sdk/raw/master/bin.win/x32/sciter.dll
           echo "output_folder=./Release" >> $GITHUB_OUTPUT
           curl -LJ -o ./usbmmidd_v2.zip https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip
@@ -503,7 +491,7 @@ jobs:
         if: env.UPLOAD_ARTIFACT == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: foxxdesk-unsigned-windows-${{ matrix.job.arch }}
+          name: rustdesk-unsigned-windows-${{ matrix.job.arch }}
           path: Release
 
       - name: Sign rustdesk files
@@ -519,17 +507,11 @@ jobs:
           sed -i '/dpiAware/d' res/manifest.xml
           pushd ./libs/portable
           pip3 install -r requirements.txt
-          python3 ./generate.py -f ../../Release/ -o . -e foxxdesk.exe
+          python3 ./generate.py -f ../../Release/ -o . -e ../../Release/rustdesk.exe
           popd
           mkdir -p ./SignOutput
-          portable_packer="./target/release/foxxdesk-portable-packer.exe"
-          if [ ! -f "$portable_packer" ]; then
-            echo "Missing $portable_packer"
-            echo "Available target/release executables:"
-            ls -la ./target/release/*.exe ./target/release/*portable* 2>/dev/null || true
-            exit 1
-          fi
-          mv "$portable_packer" ./SignOutput/foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-sciter.exe
+          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-sciter.exe
+
       - name: Sign rustdesk self-extracted file
         if: env.UPLOAD_ARTIFACT == 'true' && env.SIGN_BASE_URL != '-2'
         shell: bash
@@ -543,7 +525,7 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            ./SignOutput/foxxdesk-*.exe
+            ./SignOutput/rustdesk-*.exe
 
   build-rustdesk-ios:
     if: ${{ inputs.upload-artifact }}
@@ -652,7 +634,7 @@ jobs:
       #   # if: env.ANDROID_SIGNING_KEY != null && env.UPLOAD_ARTIFACT == 'true'
       #   uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       #   with:
-      #     name: foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.apk
+      #     name: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.apk
       #     path: flutter/build/ios/ipa/*.ipa
 
       # - name: Publish ipa package
@@ -840,14 +822,14 @@ jobs:
           CREATE_DMG="$(command -v create-dmg)"
           CREATE_DMG="$(readlink -f "$CREATE_DMG")"
           sed -i -e 's/MAXIMUM_UNMOUNTING_ATTEMPTS=3/MAXIMUM_UNMOUNTING_ATTEMPTS=7/' "$CREATE_DMG"
-          create-dmg --icon "FoxxDesk.app" 200 190 --hide-extension "FoxxDesk.app" --window-size 800 400 --app-drop-link 600 185 foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg ./flutter/build/macos/Build/Products/Release/FoxxDesk.app
+          create-dmg --icon "RustDesk.app" 200 190 --hide-extension "RustDesk.app" --window-size 800 400 --app-drop-link 600 185 rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg ./flutter/build/macos/Build/Products/Release/RustDesk.app
 
       - name: Upload unsigned macOS app
         if: env.UPLOAD_ARTIFACT == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rustdesk-unsigned-macos-${{ matrix.job.arch }}
-          path: foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg # can not upload the directory directly or tar.gz, which destroy the link structure, causing the codesign failed
+          path: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg # can not upload the directory directly or tar.gz, which destroy the link structure, causing the codesign failed
 
       - name: Codesign app and create signed dmg
         if: env.MACOS_P12_BASE64 != null && env.UPLOAD_ARTIFACT == 'true'
@@ -859,41 +841,20 @@ jobs:
           # Unlock keychain
           security default-keychain -s rustdesk.keychain
           security unlock-keychain -p ${{ secrets.MACOS_P12_PASSWORD }} rustdesk.keychain
-          # start sign the FoxxDesk.app and dmg
+          # start sign the rustdesk.app and dmg
           rm -rf *.dmg || true
-          codesign --force --options runtime -s ${{ secrets.MACOS_CODESIGN_IDENTITY }} --deep --strict ./flutter/build/macos/Build/Products/Release/FoxxDesk.app -vvv
-          create-dmg --icon "FoxxDesk.app" 200 190 --hide-extension "FoxxDesk.app" --window-size 800 400 --app-drop-link 600 185 foxxdesk-${{ env.VERSION }}.dmg ./flutter/build/macos/Build/Products/Release/FoxxDesk.app
-          codesign --force --options runtime -s ${{ secrets.MACOS_CODESIGN_IDENTITY }} --deep --strict foxxdesk-${{ env.VERSION }}.dmg -vvv
-          # notarize the foxxdesk-${{ env.VERSION }}.dmg
-          rcodesign notary-submit --api-key-path ${{ github.workspace }}/rustdesk.json  --staple foxxdesk-${{ env.VERSION }}.dmg
+          codesign --force --options runtime -s ${{ secrets.MACOS_CODESIGN_IDENTITY }} --deep --strict ./flutter/build/macos/Build/Products/Release/RustDesk.app -vvv
+          create-dmg --icon "RustDesk.app" 200 190 --hide-extension "RustDesk.app" --window-size 800 400 --app-drop-link 600 185 rustdesk-${{ env.VERSION }}.dmg ./flutter/build/macos/Build/Products/Release/RustDesk.app
+          codesign --force --options runtime -s ${{ secrets.MACOS_CODESIGN_IDENTITY }} --deep --strict rustdesk-${{ env.VERSION }}.dmg -vvv
+          # notarize the rustdesk-${{ env.VERSION }}.dmg
+          rcodesign notary-submit --api-key-path ${{ github.workspace }}/rustdesk.json  --staple rustdesk-${{ env.VERSION }}.dmg
 
-      - name: Normalize FoxxDesk DMG artifact name
+      - name: Rename rustdesk
         if: env.UPLOAD_ARTIFACT == 'true'
-        shell: bash
         run: |
-          set -euo pipefail
-          shopt -s nullglob
-          dmg_files=(foxxdesk*.dmg)
-          if [ ${#dmg_files[@]} -eq 0 ]; then
-              echo "No foxxdesk DMG found before publish. Current directory:"
-              pwd
-              ls -la
-              exit 1
-          fi
-          for name in "${dmg_files[@]}"; do
-              case "$name" in
-                  *-${{ matrix.job.arch }}.dmg)
-                      echo "DMG already has arch suffix: $name"
-                      ;;
-                  *)
-                      target="${name%.dmg}-${{ matrix.job.arch }}.dmg"
-                      echo "Renaming $name -> $target"
-                      mv "$name" "$target"
-                      ;;
-              esac
+          for name in rustdesk*??.dmg; do
+              mv "$name" "${name%%.dmg}-${{ matrix.job.arch }}.dmg"
           done
-          echo "DMG files ready for publish:"
-          ls -la foxxdesk*-${{ matrix.job.arch }}.dmg
 
       - name: Publish DMG package
         if: env.UPLOAD_ARTIFACT == 'true'
@@ -902,7 +863,7 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            foxxdesk*-${{ matrix.job.arch }}.dmg
+            rustdesk*-${{ matrix.job.arch }}.dmg
 
   publish_unsigned:
     needs:
@@ -927,25 +888,25 @@ jobs:
       - name: Download Artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: foxxdesk-unsigned-windows-x86_64
+          name: rustdesk-unsigned-windows-x86_64
           path: ./windows-x86_64/
 
       - name: Download Artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: foxxdesk-unsigned-windows-x86
+          name: rustdesk-unsigned-windows-x86
           path: ./windows-x86/
 
       - name: Combine unsigned app
         run: |
-          tar czf foxxdesk-${{ env.VERSION }}-unsigned.tar.gz *.dmg windows-x86_64 windows-x86
+          tar czf rustdesk-${{ env.VERSION }}-unsigned.tar.gz *.dmg windows-x86_64 windows-x86
 
       - name: Publish unsigned app
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
-          files: foxxdesk-${{ env.VERSION }}-unsigned.tar.gz
+          files: rustdesk-${{ env.VERSION }}-unsigned.tar.gz
 
   build-rustdesk-android:
     needs: [generate-bridge]
@@ -1158,7 +1119,7 @@ jobs:
               # build flutter
               pushd flutter
               flutter build apk "--${{ matrix.job.reltype }}" --target-platform android-arm64 --split-per-abi
-              mv build/app/outputs/flutter-apk/app-arm64-v8a-${{ matrix.job.reltype }}.apk ../foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.apk
+              mv build/app/outputs/flutter-apk/app-arm64-v8a-${{ matrix.job.reltype }}.apk ../rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.apk
             ;;
             armv7-linux-androideabi)
               mkdir -p ./flutter/android/app/src/main/jniLibs/armeabi-v7a
@@ -1167,7 +1128,7 @@ jobs:
               # build flutter
               pushd flutter
               flutter build apk "--${{ matrix.job.reltype }}" --target-platform android-arm --split-per-abi
-              mv build/app/outputs/flutter-apk/app-armeabi-v7a-${{ matrix.job.reltype }}.apk ../foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.apk
+              mv build/app/outputs/flutter-apk/app-armeabi-v7a-${{ matrix.job.reltype }}.apk ../rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.apk
             ;;
             x86_64-linux-android)
               mkdir -p ./flutter/android/app/src/main/jniLibs/x86_64
@@ -1176,7 +1137,7 @@ jobs:
               # build flutter
               pushd flutter
               flutter build apk "--${{ matrix.job.reltype }}" --target-platform android-x64 --split-per-abi
-              mv build/app/outputs/flutter-apk/app-x86_64-${{ matrix.job.reltype }}.apk ../foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.apk
+              mv build/app/outputs/flutter-apk/app-x86_64-${{ matrix.job.reltype }}.apk ../rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.apk
             ;;
             i686-linux-android)
               mkdir -p ./flutter/android/app/src/main/jniLibs/x86
@@ -1185,12 +1146,12 @@ jobs:
               # build flutter
               pushd flutter
               flutter build apk "--${{ matrix.job.reltype }}" --target-platform android-x86 --split-per-abi
-              mv build/app/outputs/flutter-apk/app-x86-${{ matrix.job.reltype }}.apk ../foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.apk
+              mv build/app/outputs/flutter-apk/app-x86-${{ matrix.job.reltype }}.apk ../rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.apk
             ;;
           esac
           popd
           mkdir -p signed-apk; pushd signed-apk
-          mv ../foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.apk .
+          mv ../rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.apk .
 
       # https://github.com/r0adkll/sign-android-release/issues/84#issuecomment-1889636075
       - name: Setup sign tool version variable
@@ -1218,7 +1179,7 @@ jobs:
         if: env.ANDROID_SIGNING_KEY != null && env.UPLOAD_ARTIFACT == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.apk
+          name: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.apk
           path: ${{steps.sign-rustdesk.outputs.signedReleaseFile}}
 
       - name: Publish signed apk package
@@ -1237,7 +1198,7 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            signed-apk/foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.apk
+            signed-apk/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.apk
 
   build-rustdesk-android-universal:
     needs: [build-rustdesk-android]
@@ -1374,7 +1335,7 @@ jobs:
           flutter build apk "--${{ env.reltype }}" --target-platform android-arm64,android-arm,android-x64${{ env.x86_target }}
           popd
           mkdir -p signed-apk
-          mv ./flutter/build/app/outputs/flutter-apk/app-${{ env.reltype }}.apk signed-apk/foxxdesk-${{ env.VERSION }}-universal${{ env.suffix }}.apk
+          mv ./flutter/build/app/outputs/flutter-apk/app-${{ env.reltype }}.apk signed-apk/rustdesk-${{ env.VERSION }}-universal${{ env.suffix }}.apk
 
       # https://github.com/r0adkll/sign-android-release/issues/84#issuecomment-1889636075
       - name: Setup sign tool version variable
@@ -1402,7 +1363,7 @@ jobs:
         if: env.ANDROID_SIGNING_KEY != null && env.UPLOAD_ARTIFACT == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.apk
+          name: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.apk
           path: ${{steps.sign-rustdesk.outputs.signedReleaseFile}}
 
       - name: Publish signed apk package
@@ -1421,7 +1382,7 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            signed-apk/foxxdesk-${{ env.VERSION }}-universal${{ env.suffix }}.apk
+            signed-apk/rustdesk-${{ env.VERSION }}-universal${{ env.suffix }}.apk
 
   build-rustdesk-linux:
     needs: [generate-bridge]
@@ -1683,29 +1644,8 @@ jobs:
             export CARGO_INCREMENTAL=0
             export DEB_ARCH=${{ matrix.job.deb_arch }}
             python3 ./build.py --flutter --skip-cargo
-            # V33: robust DEB artifact collection. Avoid fragile rustdesk/foxxdesk globs.
-            mkdir -p /workspace
-            echo "DEB files before arch suffix:"
-            find /workspace -maxdepth 1 -type f \( -name "foxxdesk*.deb" -o -name "rustdesk*.deb" \) -print | sort || true
-            mapfile -t deb_files < <(find /workspace -maxdepth 1 -type f \( -name "foxxdesk*.deb" -o -name "rustdesk*.deb" \) -print | sort)
-            if [ "${#deb_files[@]}" -eq 0 ]; then
-              echo "No FoxxDesk/RustDesk DEB artifact found in /workspace after build.py"
-              ls -lah /workspace || true
-              exit 1
-            fi
-            for deb_file in "${deb_files[@]}"; do
-              name="$(basename "$deb_file")"
-              case "$name" in
-                rustdesk-*) name="foxxdesk-${name#rustdesk-}" ;;
-              esac
-              case "$name" in
-                *-${{ matrix.job.arch }}.deb) target="/workspace/$name" ;;
-                *) target="/workspace/${name%.deb}-${{ matrix.job.arch }}.deb" ;;
-              esac
-              if [ "$deb_file" != "$target" ]; then
-                mv -f "$deb_file" "$target"
-              fi
-              echo "DEB artifact ready: $target"
+            for name in rustdesk*??.deb; do
+              mv "$name" "${name%%.deb}-${{ matrix.job.arch }}.deb"
             done
 
             # rpm package
@@ -1717,26 +1657,9 @@ jobs:
                 ;;
             esac
             HBB=`pwd` rpmbuild ./res/rpm-flutter.spec -bb
-            # V33: robust RPM artifact collection. Avoid fragile rustdesk/foxxdesk globs.
-            rpm_dir="$HOME/rpmbuild/RPMS/${{ matrix.job.arch }}"
-            mkdir -p /workspace
-            echo "RPM output directory: $rpm_dir"
-            ls -lah "$rpm_dir" || true
-            echo "All generated RPM files:"
-            find "$HOME/rpmbuild/RPMS" -type f -name "*.rpm" -print | sort || true
-            mapfile -t rpm_files < <(find "$rpm_dir" -maxdepth 1 -type f -name "*.rpm" -print | sort)
-            if [ "${#rpm_files[@]}" -eq 0 ]; then
-              echo "No RPM artifact found in $rpm_dir after rpmbuild"
-              exit 1
-            fi
-            for rpm_file in "${rpm_files[@]}"; do
-              name="$(basename "$rpm_file")"
-              case "$name" in
-                rustdesk-*) name="foxxdesk-${name#rustdesk-}" ;;
-              esac
-              target="/workspace/${name%.rpm}.rpm"
-              mv -f "$rpm_file" "$target"
-              echo "RPM artifact ready: $target"
+            pushd ~/rpmbuild/RPMS/${{ matrix.job.arch }}
+            for name in rustdesk*??.rpm; do
+                mv "$name" /workspace/"${name%%.rpm}.rpm"
             done
 
             # rpm suse package
@@ -1748,26 +1671,9 @@ jobs:
                 ;;
             esac
             HBB=`pwd` rpmbuild ./res/rpm-flutter-suse.spec -bb
-            # V33: robust SUSE RPM artifact collection. Avoid fragile rustdesk/foxxdesk globs.
-            rpm_dir="$HOME/rpmbuild/RPMS/${{ matrix.job.arch }}"
-            mkdir -p /workspace
-            echo "SUSE RPM output directory: $rpm_dir"
-            ls -lah "$rpm_dir" || true
-            echo "All generated RPM files:"
-            find "$HOME/rpmbuild/RPMS" -type f -name "*.rpm" -print | sort || true
-            mapfile -t rpm_files < <(find "$rpm_dir" -maxdepth 1 -type f -name "*.rpm" -print | sort)
-            if [ "${#rpm_files[@]}" -eq 0 ]; then
-              echo "No SUSE RPM artifact found in $rpm_dir after rpmbuild"
-              exit 1
-            fi
-            for rpm_file in "${rpm_files[@]}"; do
-              name="$(basename "$rpm_file")"
-              case "$name" in
-                rustdesk-*) name="foxxdesk-${name#rustdesk-}" ;;
-              esac
-              target="/workspace/${name%.rpm}-suse.rpm"
-              mv -f "$rpm_file" "$target"
-              echo "SUSE RPM artifact ready: $target"
+            pushd ~/rpmbuild/RPMS/${{ matrix.job.arch }}
+            for name in rustdesk*??.rpm; do
+                mv "$name" /workspace/"${name%%.rpm}-suse.rpm"
             done
 
       - name: Publish debian/rpm package
@@ -1777,15 +1683,15 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            foxxdesk-*.deb
-            foxxdesk-*.rpm
+            rustdesk-*.deb
+            rustdesk-*.rpm
 
       - name: Upload deb
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: env.UPLOAD_ARTIFACT == 'true'
         with:
-          name: foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb
-          path: foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb
+          name: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb
+          path: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb
 
       # only x86_64 for arch since we can not find newest arm64 docker image to build
       # old arch image does not make sense for arch since it is "arch" which always update to date
@@ -1813,7 +1719,7 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            res/foxxdesk-${{ env.VERSION }}*.zst
+            res/rustdesk-${{ env.VERSION }}*.zst
 
   build-rustdesk-linux-sciter:
     if: ${{ inputs.upload-artifact }}
@@ -2013,7 +1919,7 @@ jobs:
             cargo build --locked --features inline${{ matrix.job.extra_features }} --release --bins --jobs 1
             # make debian package
             mkdir -p ./Release
-            mv ./target/release/foxxdesk ./Release/foxxdesk
+            mv ./target/release/rustdesk ./Release/rustdesk
             wget -O ./Release/libsciter-gtk.so https://github.com/c-smile/sciter-sdk/raw/master/bin.lnx/${{ matrix.job.sciter_arch }}/libsciter-gtk.so
             export DEB_ARCH=${{ matrix.job.deb_arch }}
             ./build.py --package ./Release
@@ -2021,26 +1927,9 @@ jobs:
       - name: Rename rustdesk
         shell: bash
         run: |
-          # V33: robust Sciter DEB artifact duplication. Avoid fragile foxxdesk*??.deb glob.
-          echo "Sciter DEB files before duplicate:"
-          find . -maxdepth 1 -type f \( -name "foxxdesk*.deb" -o -name "rustdesk*.deb" \) ! -name "*-sciter.deb" -print | sort || true
-          mapfile -t sciter_deb_files < <(find . -maxdepth 1 -type f \( -name "foxxdesk*.deb" -o -name "rustdesk*.deb" \) ! -name "*-sciter.deb" -print | sort)
-          if [ "${#sciter_deb_files[@]}" -eq 0 ]; then
-              echo "No base DEB artifact found for Sciter package duplication"
-              ls -lah . || true
-              exit 1
-          fi
-          for deb_file in "${sciter_deb_files[@]}"; do
-              name="$(basename "$deb_file")"
-              case "$name" in
-                rustdesk-*) name="foxxdesk-${name#rustdesk-}" ;;
-              esac
-              case "$name" in
-                *-${{ matrix.job.arch }}.deb) target="./${name%.deb}-sciter.deb" ;;
-                *) target="./${name%.deb}-${{ matrix.job.arch }}-sciter.deb" ;;
-              esac
-              cp -f "$deb_file" "$target"
-              echo "Sciter DEB artifact ready: $target"
+          for name in rustdesk*??.deb; do
+              # use cp to duplicate deb files to fit other packages.
+              cp "$name" "${name%%.deb}-${{ matrix.job.arch }}-sciter.deb"
           done
 
       - name: Publish debian package
@@ -2050,14 +1939,14 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-sciter.deb
+            rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-sciter.deb
 
       - name: Upload deb
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: env.UPLOAD_ARTIFACT == 'true'
         with:
-          name: foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-sciter.deb
-          path: foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-sciter.deb
+          name: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-sciter.deb
+          path: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-sciter.deb
 
   build-appimage:
     name: Build appimage ${{ matrix.job.target }}
@@ -2079,12 +1968,12 @@ jobs:
       - name: Download Binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb
+          name: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb
           path: .
 
       - name: Rename Binary
         run: |
-          mv foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb appimage/rustdesk.deb
+          mv rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb appimage/rustdesk.deb
 
       - name: Build appimage package
         shell: bash
@@ -2095,6 +1984,7 @@ jobs:
           sudo apt-get install -y libarchive-tools libfuse2
           # set-up appimage-builder
           # https://github.com/AppImage/AppImageKit/issues/1395
+          sudo pip3 install "setuptools_scm<10"
           sudo pip3 install git+https://github.com/rustdesk-org/appimage-builder.git
           # run appimage-builder
           pushd appimage
@@ -2107,7 +1997,7 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            ./appimage/foxxdesk-${{ env.VERSION }}-*.AppImage
+            ./appimage/rustdesk-${{ env.VERSION }}-*.AppImage
 
   build-flatpak:
     name: Build flatpak ${{ matrix.job.target }}${{ matrix.job.suffix }}
@@ -2152,12 +2042,12 @@ jobs:
       - name: Download Binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.deb
+          name: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.deb
           path: .
 
       - name: Rename Binary
         run: |
-          mv foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.deb flatpak/rustdesk.deb
+          mv rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.deb flatpak/rustdesk.deb
 
       - uses: rustdesk-org/run-on-arch-action@d3fcfbb632b84cf7f6bc772bfaaa2c2f4f8789a8 # no release tag; commit 2026-05-26
         name: Build rustdesk flatpak package for ${{ matrix.job.arch }}
@@ -2183,8 +2073,8 @@ jobs:
             # package
             pushd flatpak
             git clone https://github.com/flathub/shared-modules.git --depth=1
-            flatpak-builder --user --install-deps-from=flathub -y --force-clean --repo=repo ./build ./foxxdesk.json
-            flatpak build-bundle ./repo foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.flatpak com.rustdesk.RustDesk
+            flatpak-builder --user --install-deps-from=flathub -y --force-clean --repo=repo ./build ./rustdesk.json
+            flatpak build-bundle ./repo rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.flatpak com.rustdesk.RustDesk
 
       - name: Publish flatpak package
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
@@ -2192,9 +2082,10 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            flatpak/foxxdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.flatpak
+            flatpak/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.flatpak
 
   build-rustdesk-web:
+    if: False
     name: build-rustdesk-web
     runs-on: ubuntu-22.04
     permissions:
@@ -2252,7 +2143,7 @@ jobs:
           cp ../web/README.md web
           # TODO: Remove the following line when the web is almost complete.
           echo -e "\n\nThis build is for preview and not full functionality." >> web/README.md
-          dir_name="foxxdesk-${{ env.VERSION }}-${{ env.RELEASE_NAME }}"
+          dir_name="rustdesk-${{ env.VERSION }}-${{ env.RELEASE_NAME }}"
           mv web "${dir_name}" && tar czf "${dir_name}".tar.gz "${dir_name}"
           sha256sum "${dir_name}".tar.gz
           popd
@@ -2264,4 +2155,4 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            flutter/build/foxxdesk-${{ env.VERSION }}-${{ env.RELEASE_NAME }}.tar.gz
+            flutter/build/rustdesk-${{ env.VERSION }}-${{ env.RELEASE_NAME }}.tar.gz

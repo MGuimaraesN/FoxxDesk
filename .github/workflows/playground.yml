@@ -17,7 +17,7 @@ env:
   TAG_NAME: "nightly"
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
-  VERSION: "1.4.8"
+  VERSION: "1.4.9"
   NDK_VERSION: "r26d"
   #signing keys env variable checks
   ANDROID_SIGNING_KEY: "${{ secrets.ANDROID_SIGNING_KEY }}"
@@ -148,9 +148,6 @@ jobs:
       - name: Install flutter rust bridge deps
         shell: bash
         run: |
-          git submodule sync --recursive
-          git submodule update --init --recursive
-          test -f libs/hbb_common/Cargo.toml
           sed -i '' 's/3.1.0/2.17.0/g' flutter/pubspec.yaml;
           cargo install flutter_rust_bridge_codegen --version ${{ matrix.job.bridge }} --features "uuid" --locked
           # below works for mac to make buildable on 3.13.9
@@ -198,7 +195,7 @@ jobs:
           CREATE_DMG="$(command -v create-dmg)"
           CREATE_DMG="$(readlink -f "$CREATE_DMG")"
           sed -i -e 's/MAXIMUM_UNMOUNTING_ATTEMPTS=3/MAXIMUM_UNMOUNTING_ATTEMPTS=7/' "$CREATE_DMG"
-          create-dmg --icon "FoxxDesk.app" 200 190 --hide-extension "FoxxDesk.app" --window-size 800 400 --app-drop-link 600 185 rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg ./flutter/build/macos/Build/Products/Release/FoxxDesk.app
+          create-dmg --icon "RustDesk.app" 200 190 --hide-extension "RustDesk.app" --window-size 800 400 --app-drop-link 600 185 rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg ./flutter/build/macos/Build/Products/Release/RustDesk.app
 
       - name: Codesign app and create signed dmg
         if: env.MACOS_P12_BASE64 != null
@@ -210,41 +207,19 @@ jobs:
           # Unlock keychain
           security default-keychain -s rustdesk.keychain
           security unlock-keychain -p ${{ secrets.MACOS_P12_PASSWORD }} rustdesk.keychain
-          # start sign the FoxxDesk.app and dmg
+          # start sign the rustdesk.app and dmg
           rm -rf *.dmg || true
-          codesign --force --options runtime -s ${{ secrets.MACOS_CODESIGN_IDENTITY }} --deep --strict ./flutter/build/macos/Build/Products/Release/FoxxDesk.app -vvv
-          create-dmg --icon "FoxxDesk.app" 200 190 --hide-extension "FoxxDesk.app" --window-size 800 400 --app-drop-link 600 185 rustdesk-${{ env.VERSION }}.dmg ./flutter/build/macos/Build/Products/Release/FoxxDesk.app
+          codesign --force --options runtime -s ${{ secrets.MACOS_CODESIGN_IDENTITY }} --deep --strict ./flutter/build/macos/Build/Products/Release/RustDesk.app -vvv
+          create-dmg --icon "RustDesk.app" 200 190 --hide-extension "RustDesk.app" --window-size 800 400 --app-drop-link 600 185 rustdesk-${{ env.VERSION }}.dmg ./flutter/build/macos/Build/Products/Release/RustDesk.app
           codesign --force --options runtime -s ${{ secrets.MACOS_CODESIGN_IDENTITY }} --deep --strict rustdesk-${{ env.VERSION }}.dmg -vvv
           # notarize the rustdesk-${{ env.VERSION }}.dmg
           rcodesign notary-submit --api-key-path ${{ github.workspace }}/rustdesk.json  --staple rustdesk-${{ env.VERSION }}.dmg
 
-      - name: Normalize FoxxDesk DMG artifact name
-        if: env.UPLOAD_ARTIFACT == 'true'
-        shell: bash
+      - name: Rename rustdesk
         run: |
-          set -euo pipefail
-          shopt -s nullglob
-          dmg_files=(foxxdesk*.dmg)
-          if [ ${#dmg_files[@]} -eq 0 ]; then
-              echo "No foxxdesk DMG found before publish. Current directory:"
-              pwd
-              ls -la
-              exit 1
-          fi
-          for name in "${dmg_files[@]}"; do
-              case "$name" in
-                  *-${{ matrix.job.arch }}.dmg)
-                      echo "DMG already has arch suffix: $name"
-                      ;;
-                  *)
-                      target="${name%.dmg}-${{ matrix.job.arch }}.dmg"
-                      echo "Renaming $name -> $target"
-                      mv "$name" "$target"
-                      ;;
-              esac
+          for name in rustdesk*??.dmg; do
+              mv "$name" "${name%%.dmg}-${{ matrix.job.arch }}-flutter${{ matrix.job.flutter }}-flutter${{ matrix.job.date }}.dmg"
           done
-          echo "DMG files ready for publish:"
-          ls -la foxxdesk*-${{ matrix.job.arch }}.dmg
 
       - name: Publish DMG package
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
@@ -328,9 +303,6 @@ jobs:
 
       - name: Install flutter rust bridge deps
         run: |
-          git submodule sync --recursive
-          git submodule update --init --recursive
-          test -f libs/hbb_common/Cargo.toml
           git config --global core.longpaths true
           cargo install flutter_rust_bridge_codegen --version ${{ env.FLUTTER_RUST_BRIDGE_VERSION }} --features "uuid" --locked
           sed -i 's/uni_links_desktop/#uni_links_desktop/g' flutter/pubspec.yaml

@@ -1026,7 +1026,7 @@ pub fn main_set_option(key: String, value: String) {
         set_option(key, value.clone());
         #[cfg(target_os = "android")]
         crate::rendezvous_mediator::RendezvousMediator::restart();
-        #[cfg(any(target_os = "android", target_os = "ios", feature = "cli"))]
+        #[cfg(any(target_os = "android", target_os = "ios"))]
         crate::common::test_rendezvous_server();
     } else {
         set_option(key, value.clone());
@@ -1224,9 +1224,14 @@ pub fn main_set_local_option(key: String, value: String) {
     let is_texture_render_key = key.eq(config::keys::OPTION_TEXTURE_RENDER);
     let is_d3d_render_key = key.eq(config::keys::OPTION_ALLOW_D3D_RENDER);
     set_local_option(key, value.clone());
+    let is_render_target =
+        |session: &crate::flutter::FlutterSession| session.is_default() || session.is_view_camera();
     if is_texture_render_key {
         let session_event = [("v", &value)];
         for session in sessions::get_sessions() {
+            if !is_render_target(&session) {
+                continue;
+            }
             session.push_event("use_texture_render", &session_event, &[]);
             session.use_texture_render_changed();
             session.ui_handler.update_use_texture_render();
@@ -1234,6 +1239,9 @@ pub fn main_set_local_option(key: String, value: String) {
     }
     if is_d3d_render_key {
         for session in sessions::get_sessions() {
+            if !is_render_target(&session) {
+                continue;
+            }
             session.update_supported_decodings();
         }
     }
@@ -2806,7 +2814,7 @@ pub fn main_get_common(key: String) -> String {
     if key == "is-printer-installed" {
         #[cfg(target_os = "windows")]
         {
-            return match remote_printer::is_rd_printer_installed("foxxdesk") {
+            return match remote_printer::is_rd_printer_installed(&get_app_name()) {
                 Ok(r) => r.to_string(),
                 Err(e) => e.to_string(),
             };
@@ -2852,8 +2860,16 @@ pub fn main_get_common(key: String) -> String {
                 crate::platform::windows::is_msi_installed(),
                 crate::common::is_custom_client(),
             ) {
-                (Ok(true), false) => format!("foxxdesk-{_version}-x86_64.msi"),
-                (Ok(true), true) | (Ok(false), _) => format!("foxxdesk-{_version}-x86_64.exe"),
+                (Ok(true), false) => match crate::platform::windows::release_arch_suffix() {
+                    Some(arch) => format!("rustdesk-{_version}-{arch}.msi"),
+                    None => "error:unsupported".to_owned(),
+                },
+                (Ok(true), true) | (Ok(false), _) => {
+                    match crate::platform::windows::release_arch_suffix() {
+                        Some(arch) => format!("rustdesk-{_version}-{arch}.exe"),
+                        None => "error:unsupported".to_owned(),
+                    }
+                }
                 (Err(e), _) => {
                     log::error!("Failed to check if is msi: {}", e);
                     format!("error:update-failed-check-msi-tip")
@@ -2862,9 +2878,9 @@ pub fn main_get_common(key: String) -> String {
             #[cfg(target_os = "macos")]
             {
                 return if cfg!(target_arch = "x86_64") {
-                    format!("foxxdesk-{_version}-x86_64.dmg")
+                    format!("rustdesk-{_version}-x86_64.dmg")
                 } else if cfg!(target_arch = "aarch64") {
-                    format!("foxxdesk-{_version}-aarch64.dmg")
+                    format!("rustdesk-{_version}-aarch64.dmg")
                 } else {
                     "error:unsupported".to_owned()
                 };
@@ -2887,7 +2903,7 @@ pub fn main_set_common(_key: String, _value: String) {
     #[cfg(target_os = "windows")]
     if _key == "install-printer" && crate::platform::is_win_10_or_greater() {
         std::thread::spawn(move || {
-            let (success, msg) = match remote_printer::install_update_printer("foxxdesk") {
+            let (success, msg) = match remote_printer::install_update_printer(&get_app_name()) {
                 Ok(_) => (true, "".to_owned()),
                 Err(e) => {
                     let err = e.to_string();
@@ -3009,6 +3025,16 @@ pub fn main_set_common(_key: String, _value: String) {
                 serde_json::ser::to_string(&data).unwrap_or("".to_owned()),
             );
         });
+    }
+}
+
+pub fn session_set_common(session_id: SessionID, key: String, value: String) {
+    if let Some(s) = sessions::get_session_by_session_id(&session_id) {
+        if key == "continue-insecure-connection"
+        {
+            s.continue_insecure_connection(value == "Y");
+            return;
+        }
     }
 }
 

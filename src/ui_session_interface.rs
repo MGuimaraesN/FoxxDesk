@@ -128,6 +128,10 @@ impl ConnectionRoundState {
             true
         }
     }
+
+    pub fn is_connected(&self) -> bool {
+        matches!(self.state, ConnectionState::Connected)
+    }
 }
 
 impl Default for ConnectionRoundState {
@@ -1404,6 +1408,15 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Close);
     }
 
+    pub fn continue_insecure_connection(&self, continue_insecure: bool) {
+        let data = if continue_insecure {
+            Data::ContinueInsecureConnection
+        } else {
+            Data::RejectInsecureConnection
+        };
+        self.send(data);
+    }
+
     fn try_auto_start_job_str(is_reconnected: bool, job_str: &str) -> Option<String> {
         if is_reconnected {
             let job_str = job_str.trim();
@@ -1805,10 +1818,12 @@ impl<T: InvokeUiSession> Interface for Session<T> {
                 self.msgbox("error", "Error", msg, "");
                 return;
             }
-            self.try_change_init_resolution(pi.current_display);
-            let p = self.lc.read().unwrap().should_auto_login();
-            if !p.is_empty() {
-                input_os_password(p, true, self.clone());
+            if !self.is_view_camera() {
+                self.try_change_init_resolution(pi.current_display);
+                let p = self.lc.read().unwrap().should_auto_login();
+                if !p.is_empty() {
+                    input_os_password(p, true, self.clone());
+                }
             }
             let current = &pi.displays[pi.current_display as usize];
             self.set_display(
@@ -2006,7 +2021,7 @@ pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>, round: u32) {
                 || handler.args[2].parse::<i32>().unwrap_or(0) <= 0
                 || port <= 0
             {
-                handler.on_error("Invalid arguments, usage:<br><br> foxxdesk --port-forward remote-id listen-port remote-host remote-port");
+                handler.on_error("Invalid arguments, usage:<br><br> rustdesk --port-forward remote-id listen-port remote-host remote-port");
             }
             let remote_host = handler.args[1].clone();
             let remote_port = handler.args[2].parse::<i32>().unwrap_or(0);

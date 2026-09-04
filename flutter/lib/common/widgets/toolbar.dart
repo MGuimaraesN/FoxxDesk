@@ -606,7 +606,7 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
   // to-do:
   // 1. Web desktop
   // 2. Mobile, copy the image to the clipboard
-  if (isDesktop) {
+  if ((isDefaultConn || ffi.connType == ConnType.viewCamera) && isDesktop) {
     final isScreenshotSupported = bind.sessionGetCommonSync(
         sessionId: sessionId, key: 'is_screenshot_supported', param: '');
     if ('true' == isScreenshotSupported) {
@@ -797,8 +797,7 @@ Future<List<TToggleMenu>> toolbarCursor(
                 await bind.sessionToggleOption(
                     sessionId: sessionId, value: option);
                 state.value = bind.sessionGetToggleOptionSync(
-                        sessionId: sessionId, arg: option) ??
-                    false;
+                    sessionId: sessionId, arg: option);
               }
             : null));
   }
@@ -812,21 +811,18 @@ Future<List<TToggleMenu>> toolbarCursor(
       !bind.sessionIsMultiUiSession(sessionId: sessionId)) {
     final option = 'follow-remote-cursor';
     final value =
-            bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option) ??
-        false;
+        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);
     final showCursorOption = 'show-remote-cursor';
     final showCursorState = ShowRemoteCursorState.find(id);
     final showCursorLockState = ShowRemoteCursorLockState.find(id);
-    final showCursorEnabled =
-        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: showCursorOption) ??
-            false;
+    final showCursorEnabled = bind.sessionGetToggleOptionSync(
+        sessionId: sessionId, arg: showCursorOption);
     showCursorLockState.value = value;
     if (value && !showCursorEnabled) {
       await bind.sessionToggleOption(
           sessionId: sessionId, value: showCursorOption);
       showCursorState.value = bind.sessionGetToggleOptionSync(
-              sessionId: sessionId, arg: showCursorOption) ??
-          false;
+          sessionId: sessionId, arg: showCursorOption);
     }
     v.add(TToggleMenu(
         child: Text(translate('Follow remote cursor')),
@@ -835,15 +831,13 @@ Future<List<TToggleMenu>> toolbarCursor(
           if (value == null) return;
           await bind.sessionToggleOption(sessionId: sessionId, value: option);
           value = bind.sessionGetToggleOptionSync(
-                  sessionId: sessionId, arg: option) ??
-              false;
+              sessionId: sessionId, arg: option);
           showCursorLockState.value = value;
           if (!showCursorEnabled) {
             await bind.sessionToggleOption(
                 sessionId: sessionId, value: showCursorOption);
             showCursorState.value = bind.sessionGetToggleOptionSync(
-                    sessionId: sessionId, arg: showCursorOption) ??
-                false;
+                sessionId: sessionId, arg: showCursorOption);
           }
         }));
   }
@@ -882,8 +876,7 @@ Future<List<TToggleMenu>> toolbarCursor(
         if (value == null) return;
         await bind.sessionToggleOption(sessionId: sessionId, value: option);
         peerState.value =
-                bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option) ??
-            false;
+            bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);
       },
     ));
   }

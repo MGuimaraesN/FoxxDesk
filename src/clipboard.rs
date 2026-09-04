@@ -14,7 +14,7 @@ pub const FILE_CLIPBOARD_NAME: &'static str = "file-clipboard";
 pub const CLIPBOARD_INTERVAL: u64 = 333;
 
 // This format is used to store the flag in the clipboard.
-const RUSTDESK_CLIPBOARD_OWNER_FORMAT: &'static str = "dyn.com.foxxdesk.owner";
+const RUSTDESK_CLIPBOARD_OWNER_FORMAT: &'static str = "dyn.com.rustdesk.owner";
 
 // Add special format for Excel XML Spreadsheet
 const CLIPBOARD_FORMAT_EXCEL_XML_SPREADSHEET: &'static str = "XML Spreadsheet";
@@ -151,39 +151,48 @@ pub fn update_clipboard_files(files: Vec<String>, side: ClipboardSide) {
 #[cfg(feature = "unix-file-copy-paste")]
 pub fn try_empty_clipboard_files(_side: ClipboardSide, _conn_id: i32) {
     std::thread::spawn(move || {
-        let mut ctx = CLIPBOARD_CTX.lock().unwrap();
-        if ctx.is_none() {
-            match ClipboardContext::new() {
-                Ok(x) => {
-                    *ctx = Some(x);
-                }
-                Err(e) => {
-                    log::error!("Failed to create clipboard context: {}", e);
-                    return;
-                }
-            }
-        }
-        #[allow(unused_mut)]
-        if let Some(mut ctx) = ctx.as_mut() {
-            #[cfg(target_os = "linux")]
-            {
-                use clipboard::platform::unix;
-                if unix::fuse::empty_local_files(_side == ClipboardSide::Client, _conn_id) {
-                    ctx.try_empty_clipboard_files(_side);
-                }
-            }
-            #[cfg(target_os = "macos")]
-            {
-                ctx.try_empty_clipboard_files(_side);
-                // No need to make sure the context is enabled.
-                clipboard::ContextSend::proc(|context| -> ResultType<()> {
-                    context.empty_clipboard(_conn_id).ok();
-                    Ok(())
-                })
-                .ok();
-            }
+        if let Err(e) = try_empty_clipboard_files_sync(_side, _conn_id) {
+            log::error!("Failed to empty clipboard files: {}", e);
         }
     });
+}
+
+#[cfg(feature = "unix-file-copy-paste")]
+pub fn try_empty_clipboard_files_sync(_side: ClipboardSide, _conn_id: i32) -> ResultType<()> {
+    let mut ctx = CLIPBOARD_CTX.lock().unwrap();
+    if ctx.is_none() {
+        match ClipboardContext::new() {
+            Ok(x) => {
+                *ctx = Some(x);
+            }
+            Err(e) => {
+                log::error!("Failed to create clipboard context: {}", e);
+                bail!("Failed to create clipboard context: {}", e);
+            }
+        }
+    }
+    #[allow(unused_mut)]
+    if let Some(mut ctx) = ctx.as_mut() {
+        #[cfg(target_os = "linux")]
+        {
+            use clipboard::platform::unix;
+            if unix::fuse::empty_local_files(_side == ClipboardSide::Client, _conn_id) {
+                ctx.try_empty_clipboard_files(_side);
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            ctx.try_empty_clipboard_files(_side);
+            // No need to make sure the context is enabled.
+            clipboard::ContextSend::proc(|context| -> ResultType<()> {
+                if !context.empty_clipboard(_conn_id)? {
+                    bail!("Failed to empty clipboard files for conn_id {}", _conn_id);
+                }
+                Ok(())
+            })?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -492,7 +501,7 @@ impl ClipboardContext {
                 #[cfg(target_os = "macos")]
                 let is_kde_x11 = false;
                 let clear_holder_text = if is_kde_x11 {
-                    "FoxxDesk placeholder to clear the file clipboard"
+                    "RustDesk placeholder to clear the file clipboard"
                 } else {
                     ""
                 }

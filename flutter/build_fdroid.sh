@@ -1,9 +1,9 @@
 #!/bin/bash
 
 #
-# Script to build F-Droid release of FoxxDesk
+# Script to build F-Droid release of RustDesk
 #
-# Copyright (C) 2024, The FoxxDesk Authors
+# Copyright (C) 2024, The RustDesk Authors
 #               2024, Vasyl Gello <vasek.gello@gmail.com>
 #
 
@@ -302,7 +302,7 @@ prebuild)
 		fi
 	fi
 
-	# Patch the FoxxDesk sources
+	# Patch the RustDesk sources
 
 	git apply res/fdroid/patches/*.patch
 
@@ -367,7 +367,7 @@ prebuild)
 		unset BRIDGE_LLVM_PATH
 	fi
 
-	# Install Flutter version for FoxxDesk library build
+	# Install Flutter version for RustDesk library build
 
 	prepare_flutter "${FLUTTER_VERSION}" "${HOME}/flutter"
 
@@ -453,7 +453,7 @@ build)
 
 	bash flutter/build_android_deps.sh "${ANDROID_ABI}"
 
-	# Build foxxdesk lib
+	# Build rustdesk lib
 
 	cargo ndk \
 		--platform 21 \

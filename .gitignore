@@ -22,7 +22,7 @@ sciter.dll
 src/bridge_generated.rs
 src/bridge_generated.io.rs
 *deb
-foxxdesk
+rustdesk
 *.cache
 # appimage
 appimage/AppDir
@@ -56,5 +56,3 @@ vcpkg_installed
 flutter/lib/generated_plugin_registrant.dart
 libsciter.dylib
 flutter/web/
-.rebrand_backup/*
-.icon_asset_backup/*

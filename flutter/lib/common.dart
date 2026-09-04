@@ -598,22 +598,6 @@ class MyTheme {
     }
   }
 
-  /// Applies [fallbacks] as fontFamilyFallback to every text style in both
-  /// themes. Called once at startup on ARM64 Linux after a CJK font has been
-  /// loaded via FontLoader (see flutter/flutter#139293).
-  static void applyFontFallback(List<String> fallbacks) {
-    lightTheme = lightTheme.copyWith(
-      textTheme: lightTheme.textTheme.apply(fontFamilyFallback: fallbacks),
-      primaryTextTheme:
-          lightTheme.primaryTextTheme.apply(fontFamilyFallback: fallbacks),
-    );
-    darkTheme = darkTheme.copyWith(
-      textTheme: darkTheme.textTheme.apply(fontFamilyFallback: fallbacks),
-      primaryTextTheme:
-          darkTheme.primaryTextTheme.apply(fontFamilyFallback: fallbacks),
-    );
-  }
-
   static ThemeMode currentThemeMode() {
     final preference = getThemeModePreference();
     if (preference == ThemeMode.system) {
@@ -1201,6 +1185,48 @@ void msgBox(SessionID sessionId, String type, String title, String text,
     VoidCallback? onSubmit,
     int? submitTimeout}) {
   dialogManager.dismissAll();
+  if (type.contains('insecure-connection')) {
+    Future<void> closeSession() async {
+      await bind.sessionSetCommon(
+        sessionId: sessionId,
+        key: 'continue-insecure-connection',
+        value: 'N',
+      );
+      dialogManager.dismissAll();
+      closeConnection();
+    }
+
+    void continueSession() {
+      unawaited(
+        bind.sessionSetCommon(
+          sessionId: sessionId,
+          key: 'continue-insecure-connection',
+          value: 'Y',
+        ),
+      );
+      dialogManager.dismissAll();
+    }
+
+    dialogManager.show(
+      (setState, close, context) => CustomAlertDialog(
+        title: null,
+        content: SelectionArea(child: msgboxContent(type, title, text)),
+        actions: [
+          dialogButton(
+            'Continue',
+            onPressed: continueSession,
+            isOutline: true,
+          ),
+          dialogButton('Disconnect', onPressed: closeSession),
+        ],
+        onSubmit: closeSession,
+        onCancel: closeSession,
+      ),
+      tag: '$sessionId-$type-$title-$text-$link',
+    );
+    return;
+  }
+
   List<Widget> buttons = [];
   bool hasOk = false;
   submit() {
@@ -1777,7 +1803,7 @@ Future<void> saveWindowPosition(WindowType type,
 
   setPreFrame() {
     final pos = bind.getLocalFlutterOption(k: windowFramePrefix + type.name);
-    var lpos = LastWindowPosition.loadFromString(pos ?? '');
+    var lpos = LastWindowPosition.loadFromString(pos);
     if (lpos != null) {
       if (lpos.offsetWidth != null && lpos.offsetHeight != null) {
         position = Offset(lpos.offsetWidth!, lpos.offsetHeight!);
@@ -2034,7 +2060,7 @@ Future<bool> restoreWindowPosition(WindowType type,
   }
   pos ??= bind.getLocalFlutterOption(k: windowFramePrefix + type.name);
 
-  var lpos = LastWindowPosition.loadFromString(pos ?? '');
+  var lpos = LastWindowPosition.loadFromString(pos);
   if (lpos == null) {
     debugPrint("No window position saved, trying to center the window.");
     switch (type) {
@@ -2239,7 +2265,7 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
   List<String>? args;
   if (cmdArgs != null && cmdArgs.isNotEmpty) {
     args = cmdArgs;
-    // foxxdesk <uri link>
+    // rustdesk <uri link>
     if (args[0].startsWith(bind.mainUriPrefixSync())) {
       final uri = Uri.tryParse(args[0]);
       if (uri != null) {
@@ -2397,7 +2423,7 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
               'Y';
       if (!allowDeepLinkServerSettings) {
         debugPrint(
-            "Ignore foxxdesk://config because $kOptionAllowDeepLinkServerSettings is not enabled.");
+            "Ignore rustdesk://config because $kOptionAllowDeepLinkServerSettings is not enabled.");
         // Keep the user-facing error generic; detailed rejection reason is in debug logs.
         // Delay toast to avoid missing overlay during cold-start deeplink handling.
         Timer(Duration(seconds: 1), () {
@@ -2418,7 +2444,7 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
           bind.mainGetBuildinOption(key: kOptionAllowDeepLinkPassword) == 'Y';
       if (!allowDeepLinkPassword) {
         debugPrint(
-            "Ignore foxxdesk://password because $kOptionAllowDeepLinkPassword is not enabled.");
+            "Ignore rustdesk://password because $kOptionAllowDeepLinkPassword is not enabled.");
         // Keep the user-facing error generic; detailed rejection reason is in debug logs.
         // Delay toast to avoid missing overlay during cold-start deeplink handling.
         Timer(Duration(seconds: 1), () {
@@ -2443,9 +2469,9 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
   } else if (uri.authority.length > 2 &&
       (uri.path.length <= 1 ||
           (uri.path == '/r' || uri.path.startsWith('/r@')))) {
-    // foxxdesk://<connect-id>
-    // foxxdesk://<connect-id>/r
-    // foxxdesk://<connect-id>/r@<server>
+    // rustdesk://<connect-id>
+    // rustdesk://<connect-id>/r
+    // rustdesk://<connect-id>/r@<server>
     command = '--connect';
     id = uri.authority;
     if (uri.path.length > 1) {
@@ -2832,7 +2858,7 @@ Future<void> onActiveWindowChanged() async {
     } catch (err) {
       debugPrintStack(label: "$err");
     } finally {
-      debugPrint("Start closing FoxxDesk...");
+      debugPrint("Start closing RustDesk...");
       await windowManager.setPreventClose(false);
       await windowManager.close();
       if (isMacOS) {
@@ -2848,9 +2874,9 @@ Future<void> onActiveWindowChanged() async {
         //
         //```
         // embedder.cc (2725): 'FlutterPlatformMessageCreateResponseHandle' returned 'kInvalidArguments'. Engine handle was invalid.
-        // 2024-11-11 11:41:11.546 FoxxDesk[90272:2567686] Failed to create a FlutterPlatformMessageResponseHandle (2)
+        // 2024-11-11 11:41:11.546 RustDesk[90272:2567686] Failed to create a FlutterPlatformMessageResponseHandle (2)
         // embedder.cc (2672): 'FlutterEngineSendPlatformMessage' returned 'kInvalidArguments'. Invalid engine handle.
-        // 2024-11-11 11:41:11.565 FoxxDesk[90272:2567686] Failed to send message to Flutter engine on channel 'flutter/lifecycle' (2).
+        // 2024-11-11 11:41:11.565 RustDesk[90272:2567686] Failed to send message to Flutter engine on channel 'flutter/lifecycle' (2).
         // ```
         periodic_immediate(
             Duration(milliseconds: 30), RdPlatformChannel.instance.terminate);
@@ -2921,7 +2947,7 @@ class ServerConfig {
     this.key = key?.trim() ?? '';
   }
 
-  /// decode from shared string (from user shared or foxxdesk-server generated)
+  /// decode from shared string (from user shared or rustdesk-server generated)
   /// also see [encode]
   /// throw when decoding failure
   ServerConfig.decode(String msg) {
@@ -3049,7 +3075,7 @@ Future<void> updateSystemWindowTheme() async {
 ///
 /// Note: not found a general solution for rust based AVFoundation bingding.
 /// [AVFoundation] crate has compile error.
-const kMacOSPermChannel = MethodChannel("org.foxxdesk.foxxdesk/host");
+const kMacOSPermChannel = MethodChannel("org.rustdesk.rustdesk/host");
 
 enum PermissionAuthorizeType {
   undetermined,
@@ -3366,7 +3392,12 @@ Future<List<Rect>> getScreenRectList() async {
 }
 
 openMonitorInTheSameTab(int i, FFI ffi, PeerInfo pi,
-    {bool updateCursorPos = true}) {
+    {bool updateCursorPos = true, bool recordSelection = true}) {
+  if (recordSelection) {
+    ffi.ffiModel.lastUserDisplay = i;
+    ffi.ffiModel.cancelPendingRestoreTimer();
+    ffi.ffiModel.pendingMonitorRestore = null;
+  }
   final displays = i == kAllDisplayValue
       ? List.generate(pi.displays.length, (index) => index)
       : [i];
