@@ -1,6 +1,6 @@
 # Relatório de rebrand FoxxDesk
 
-- Data/hora: `2026-09-04 22:32:29`
+- Data/hora: `2026-09-04 22:46:06`
 - Modo: `apply`
 - Projeto alvo: `/home/mateus/_Projects/FoxxDesk`
 - Script: `apply_foxxdesk_rebrand_all_files_no_zip_v27.py`
@@ -23,18 +23,18 @@
 
 - Arquivos permitidos na allowlist: `267`
 - Arquivos analisados: `211`
-- Arquivos alterados: `0`
+- Arquivos alterados: `1`
 - Arquivos já aplicados/sem mudança: `208`
 - Arquivos esperados não encontrados: `0`
 - Arquivos ignorados: `5`
 - Renomeações/cópias criadas: `0`
 - Pendências: `0`
-- Backup: `/home/mateus/_Projects/FoxxDesk/.rebrand_backup/20260904_223229`
+- Backup: `/home/mateus/_Projects/FoxxDesk/.rebrand_backup/20260904_224606`
 - Log detalhado: `/home/mateus/_Projects/FoxxDesk/rebrand_v39.log`
 
 ## Arquivos alterados
 
-Nenhum.
+- `.github/workflows/foxxdesk-build.yml`
 
 ## Arquivos renomeados/copiados
 
@@ -54,7 +54,9 @@ Nenhum.
 
 ## Alterações
 
-Nenhuma alteração avaliada.
+| Status | Arquivo | Linha | Ação | Mensagem |
+|---|---|---:|---|---|
+| alterado | `.github/workflows/foxxdesk-build.yml` | 4 | garantir workflow FoxxDesk manual-only | arquivo gerado pela V25; sem payload/ZIP e sem snapshot de projeto antigo |
 
 ## Pendências
 
