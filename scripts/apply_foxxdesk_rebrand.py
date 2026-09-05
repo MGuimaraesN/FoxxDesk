@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCRIPT_VERSION = "v36-runtime-config-safe-ci-2026-09-04"
+SCRIPT_VERSION = "v37-upstream-safe-manual-ci-2026-09-05"
 APP_DISPLAY_NAME = "FoxxDesk"
 APP_SLUG = "foxxdesk"
 APP_SLUG_UPPER = "FOXXDESK"
@@ -86,7 +86,6 @@ ALLOWED_FILES: List[str] = [
     '.github/workflows/flutter-tag.yml',
     '.github/workflows/foxxdesk-build.yml',
     '.github/workflows/playground.yml',
-    '.gitignore',
     'AGENTS.md',
     'BRAND_CHANGELOG.md',
     'Cargo.toml',
@@ -157,7 +156,6 @@ ALLOWED_FILES: List[str] = [
     'fastlane/metadata/android/zh-CN/full_description.txt',
     'flatpak/com.foxxdesk.client.metainfo.xml',
     'flatpak/foxxdesk.json',
-    'flutter/.gitignore',
     'flutter/android/app/build.gradle',
     'flutter/android/app/src/main/AndroidManifest.xml',
     'flutter/android/app/src/main/kotlin/com/carriez/flutter_hbb/BootReceiver.kt',
@@ -408,6 +406,14 @@ GENERATED_HELPER_FILES: set[str] = {
     "scripts/apply_foxxdesk_icon.py",
 }
 
+# User/upstream control files that the rebrand must never rewrite.
+# In particular, .gitignore belongs to the repository owner and must remain byte-for-byte untouched.
+NEVER_PATCH_FILES: set[str] = {
+    ".gitignore",
+    "flutter/.gitignore",
+    ".gitattributes",
+}
+
 EXECUTABLE_FILES: set[str] = {
     # GitHub Actions/Linux/macOS runners precisam desses bits preservados no Git.
     # O script aplica chmod +x no filesystem; depois `git add` registra modo 100755.
@@ -456,7 +462,6 @@ OPTIONAL_FILES: set[str] = {
 
 # Cópias seguras: não apaga o arquivo antigo por padrão.
 FILE_RENAMES: Dict[str, str] = {
-    ".github/workflows/rustdesk-build.yml": ".github/workflows/foxxdesk-build.yml",
     "flatpak/com.rustdesk.RustDesk.metainfo.xml": "flatpak/com.foxxdesk.client.metainfo.xml",
     "flatpak/com.rustdesk.client.metainfo.xml": "flatpak/com.foxxdesk.client.metainfo.xml",
     "flatpak/rustdesk.json": "flatpak/foxxdesk.json",
@@ -473,6 +478,7 @@ BRIDGE_COMPAT_SCRIPT = '#!/usr/bin/env python3\n"""Keep old Dart API name Rustde
 FOXXDESK_BUILD_WORKFLOW = r"""name: FoxxDesk Build
 
 on:
+  # Intentionally manual-only. Never run the expensive FoxxDesk build on push/PR.
   workflow_dispatch:
     inputs:
       upload_artifact:
@@ -487,12 +493,28 @@ on:
         default: "foxxdesk-nightly"
 
 permissions:
-  contents: write
+  contents: read
   actions: read
 
 jobs:
+  preflight:
+    name: FoxxDesk preflight
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+
+      - name: Prepare and validate FoxxDesk source
+        uses: ./.github/actions/prepare-foxxdesk
+
   build:
     name: FoxxDesk reusable Flutter build
+    needs: preflight
+    permissions:
+      contents: write
+      actions: read
     uses: ./.github/workflows/flutter-build.yml
     secrets: inherit
     with:
@@ -1397,8 +1419,8 @@ def ensure_v25_generated_files(target: Path, args: argparse.Namespace, report: D
         args,
         report,
         backup_root,
-        "criar workflow principal FoxxDesk se ausente",
-        create_only=True,
+        "garantir workflow FoxxDesk manual-only",
+        create_only=False,
     )
     _record_generated_text_file(
         target,
@@ -1552,6 +1574,9 @@ def apply_file_renames(target: Path, args: argparse.Namespace, report: Dict[str,
 
 
 def process_one_file(target: Path, rel: str, args: argparse.Namespace, report: Dict[str, Any], backup_root: Optional[Path]) -> None:
+    if rel in NEVER_PATCH_FILES:
+        report["ignored_files"].append(rel + " (protegido; nunca alterado pelo rebrand)")
+        return
     if is_skipped_path(rel):
         report["ignored_files"].append(rel)
         return

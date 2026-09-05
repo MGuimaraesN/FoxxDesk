@@ -14,12 +14,11 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
-SCRIPT_VERSION = "foxxdesk-hbb-sync-v1-2026-09-04"
+SCRIPT_VERSION = "foxxdesk-hbb-sync-v2-atomic-same-volume-2026-09-05"
 HBB_URL = "https://github.com/rustdesk/hbb_common.git"
 CONFIG_REL = Path(".foxxdesk/foxxdesk.config.json")
 HBB_REL = Path("libs/hbb_common")
@@ -171,16 +170,21 @@ def expected_commit(root: Path, cfg: dict) -> tuple[str, str]:
     # 3) For a new release, resolve the hbb_common gitlink from that SAME RustDesk
     # ref. This avoids ever following hbb_common/main independently.
     configured_ref = str(upstream.get("rustdesk_ref", "auto")).strip()
-    ref = version if configured_ref in {"", "auto"} else configured_ref
-    try:
-        return github_submodule_commit(ref), f"submódulo do RustDesk ref {ref}"
-    except SyncError as api_error:
-        # 4) Offline/local fallback only. Compatibility validation still runs, so
-        # a stale pointer is rejected rather than silently compiled.
-        gitlink = gitlink_commit(root)
-        if gitlink:
-            return gitlink, f"gitlink do repositório (fallback; GitHub indisponível: {api_error})"
-        raise
+    refs = [configured_ref] if configured_ref not in {"", "auto"} else [version, f"v{version}"]
+    api_errors: list[str] = []
+    for ref in dict.fromkeys(refs):
+        try:
+            return github_submodule_commit(ref), f"submódulo do RustDesk ref {ref}"
+        except SyncError as api_error:
+            api_errors.append(str(api_error))
+
+    # 4) Offline/local fallback only. Compatibility validation still runs, so
+    # a stale pointer is rejected rather than silently compiled.
+    gitlink = gitlink_commit(root)
+    if gitlink:
+        reason = " | ".join(api_errors)
+        return gitlink, f"gitlink do repositório (fallback; GitHub indisponível/ref não resolvido: {reason})"
+    raise SyncError("Não foi possível resolver o hbb_common compatível. " + " | ".join(api_errors))
 
 
 def sync_real_submodule(root: Path, expected: str) -> None:
@@ -202,43 +206,73 @@ def sync_real_submodule(root: Path, expected: str) -> None:
         raise SyncError(f"Submódulo hbb_common ficou em {got or 'desconhecido'}, esperado {expected}")
 
 
+def _rmtree_onerror(func, path, exc_info) -> None:
+    """Make read-only Git files writable and retry removal (Windows-safe)."""
+    try:
+        os.chmod(path, 0o700)
+        func(path)
+    except Exception:
+        pass
+
+
+def robust_rmtree(path: Path) -> None:
+    if not path.exists():
+        return
+    shutil.rmtree(path, onerror=_rmtree_onerror)
+
+
 def clone_exact_revision(root: Path, expected: str) -> None:
+    """Install an exact vendored hbb_common revision with an atomic same-volume swap.
+
+    The staging directory deliberately lives beside libs/hbb_common. GitHub's Windows
+    runners keep TEMP on C: while the workspace is on D:. Staging in system TEMP and
+    moving into the workspace triggers WinError 17 (cross-volume rename) and can leave
+    a half-restored backup. A sibling staging directory avoids that class of failure.
+    """
     destination = root / HBB_REL
     parent = destination.parent
     parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="foxxdesk-hbb-") as tmp_s:
-        tmp = Path(tmp_s) / "hbb_common"
-        run(["git", "-c", "core.longpaths=true", "init", str(tmp)], cwd=root)
-        run(["git", "-C", str(tmp), "remote", "add", "origin", HBB_URL], cwd=root)
-        # Prefer a tiny fetch by exact SHA. Some Git servers reject direct SHA fetches;
-        # in that case fetch normal refs and check out the expected reachable commit.
+
+    staging = parent / ".hbb_common.foxxdesk-new"
+    backup = parent / ".hbb_common.foxxdesk-old"
+    robust_rmtree(staging)
+    robust_rmtree(backup)
+
+    try:
+        run(["git", "-c", "core.longpaths=true", "init", str(staging)], cwd=root)
+        run(["git", "-C", str(staging), "remote", "add", "origin", HBB_URL], cwd=root)
         try:
-            run(["git", "-C", str(tmp), "fetch", "--depth", "1", "origin", expected], cwd=root)
+            run(["git", "-C", str(staging), "fetch", "--depth", "1", "origin", expected], cwd=root)
             checkout_ref = "FETCH_HEAD"
         except subprocess.CalledProcessError:
-            run(["git", "-C", str(tmp), "fetch", "--prune", "origin"], cwd=root)
+            run(["git", "-C", str(staging), "fetch", "--prune", "origin"], cwd=root)
             checkout_ref = expected
-        run(["git", "-C", str(tmp), "checkout", "--detach", checkout_ref], cwd=root)
-        got = run(["git", "-C", str(tmp), "rev-parse", "HEAD"], cwd=root, capture=True).stdout.strip().lower()
+        run(["git", "-C", str(staging), "checkout", "--detach", "--force", checkout_ref], cwd=root)
+        got = run(["git", "-C", str(staging), "rev-parse", "HEAD"], cwd=root, capture=True).stdout.strip().lower()
         if got != expected:
             raise SyncError(f"Clone retornou {got}, esperado {expected}")
-        # This is a vendored working copy in repositories that do not preserve the gitlink.
-        shutil.rmtree(tmp / ".git", ignore_errors=True)
-        (tmp / MARKER).write_text(expected + "\n", encoding="utf-8")
-        old = parent / ".hbb_common.foxxdesk-old"
-        if old.exists():
-            shutil.rmtree(old, ignore_errors=True)
+
+        # Convert the checkout into a vendored tree before the swap. Removing .git here
+        # also avoids Windows file-lock/read-only issues during later cleanup.
+        robust_rmtree(staging / ".git")
+        (staging / MARKER).write_text(expected + "\n", encoding="utf-8")
+
         if destination.exists():
-            destination.rename(old)
+            destination.rename(backup)
         try:
-            shutil.move(str(tmp), str(destination))
+            staging.rename(destination)  # same parent => same filesystem/drive, atomic
         except Exception:
-            if destination.exists():
-                shutil.rmtree(destination, ignore_errors=True)
-            if old.exists():
-                old.rename(destination)
+            robust_rmtree(destination)
+            if backup.exists() and not destination.exists():
+                backup.rename(destination)
             raise
-        shutil.rmtree(old, ignore_errors=True)
+        robust_rmtree(backup)
+    except Exception:
+        robust_rmtree(staging)
+        # If a previous attempt left a backup and destination vanished, restore it.
+        if backup.exists() and not destination.exists():
+            backup.rename(destination)
+        raise
 
 
 def persist_version_pin(root: Path, cfg: dict, commit: str) -> bool:

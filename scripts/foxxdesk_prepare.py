@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-SCRIPT_VERSION = "foxxdesk-prepare-v2-config-safe-2026-09-04"
+SCRIPT_VERSION = "foxxdesk-prepare-v3-nonforced-ci-2026-09-05"
 STATE_REL = Path('.foxxdesk/icon-state.json')
 OVERLAY_MANIFEST_REL = Path('.foxxdesk/icon-overlay-manifest.json')
 
@@ -324,7 +324,7 @@ def main() -> int:
             args.sync_deps or args.force_sync_deps or args.ci or bool(cfg.get('upstream', {}).get('sync_hbb_common', True))
         )
         if should_sync:
-            sync_dependency(root, force=(args.force_sync_deps or args.ci), write_pin=not args.ci)
+            sync_dependency(root, force=args.force_sync_deps, write_pin=not args.ci)
 
         run_rebrand(root, cfg, profile, dry_run=not apply)
 

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FoxxDesk · Configuração resiliente v2</title>
+<style>
+:root{color-scheme:dark;--bg:#090b10;--panel:#0f131b;--panel2:#141a24;--text:#eef2f8;--muted:#9ba7b8;--line:#252d3a;--accent:#8bb8ff;--good:#7ee2ad;--warn:#ffd27d;--bad:#ff8c9a;--code:#0a0e15}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 85% 0,#172338 0,transparent 30rem),var(--bg);color:var(--text);font:15px/1.65 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}a{color:var(--accent);text-decoration:none}.shell{max-width:1220px;margin:auto;padding:28px}.hero{padding:54px 0 30px}.eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}.hero h1{font-size:clamp(36px,6vw,72px);line-height:1;margin:.2em 0;letter-spacing:-.055em}.hero p{max-width:780px;color:var(--muted);font-size:18px}.pillbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}.pill{border:1px solid var(--line);background:#101620;padding:7px 11px;border-radius:999px;color:#cbd5e1;font-size:12px}.layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:28px}.nav{position:sticky;top:18px;align-self:start;border:1px solid var(--line);background:rgba(15,19,27,.82);backdrop-filter:blur(16px);border-radius:18px;padding:14px}.nav a{display:block;padding:8px 10px;color:var(--muted);border-radius:9px}.nav a:hover{background:#171f2b;color:var(--text)}main{min-width:0}.card{border:1px solid var(--line);background:linear-gradient(180deg,rgba(20,26,36,.94),rgba(13,17,24,.96));border-radius:20px;padding:24px;margin:0 0 20px;box-shadow:0 18px 60px rgba(0,0,0,.18)}h2{font-size:27px;letter-spacing:-.03em;margin:0 0 14px}h3{margin:24px 0 8px;font-size:18px}p,li{color:#c9d2df}.muted{color:var(--muted)}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:#161d28;border:1px solid #283243;padding:.12em .36em;border-radius:6px;color:#dceaff}pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:14px;padding:16px;white-space:pre}pre code{border:0;background:none;padding:0}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.metric{border:1px solid var(--line);background:#101620;border-radius:14px;padding:16px}.metric strong{display:block;font-size:22px}.ok{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}table{width:100%;border-collapse:collapse;margin:14px 0}th,td{text-align:left;border-bottom:1px solid var(--line);padding:10px;vertical-align:top}th{color:#fff;font-size:12px;text-transform:uppercase;letter-spacing:.08em}td{color:#c9d2df}.callout{border-left:3px solid var(--accent);background:#101826;padding:13px 15px;border-radius:0 12px 12px 0}.danger{border-left-color:var(--bad)}.good{border-left-color:var(--good)}.search{width:100%;padding:12px 14px;background:#0c1119;border:1px solid var(--line);border-radius:12px;color:white;outline:none;margin:0 0 20px}.search:focus{border-color:#476b9e}.footer{color:var(--muted);padding:28px 0 50px;text-align:center}@media(max-width:850px){.layout{grid-template-columns:1fr}.nav{position:relative;top:auto}.grid{grid-template-columns:1fr}.shell{padding:18px}}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="hero">
+<div class="eyebrow">FoxxDesk · Resilience v2</div>
+<h1>Atualize o upstream.<br>Preserve o FoxxDesk.</h1>
+<p>Configuração central, dependência compatível, rebrand por patches e ícone mestre validado por hash. O fluxo foi desenhado para reduzir alterações desnecessárias e impedir builds “meio FoxxDesk, meio RustDesk”.</p>
+<div class="pillbar"><span class="pill">patch-only</span><span class="pill">runtime profile</span><span class="pill">hbb_common pinned</span><span class="pill">icon SHA-256 fallback</span><span class="pill">GitHub Actions</span></div>
+</header>
+<div class="layout">
+<nav class="nav">
+<input id="search" class="search" placeholder="Buscar nesta página…">
+<a href="#arquitetura">Arquitetura</a><a href="#erro-icon">Erro do icon.png</a><a href="#config">JSON central</a><a href="#icons">Ícones</a><a href="#profiles">Perfis</a><a href="#hbb">hbb_common</a><a href="#actions">GitHub Actions</a><a href="#commands">Comandos</a><a href="#checklist">Checklist</a>
+</nav>
+<main id="content">
+<section class="card" id="arquitetura"><h2>Arquitetura</h2><div class="grid"><div class="metric"><strong class="ok">1</strong><span>configuração: <code>.foxxdesk/foxxdesk.config.json</code></span></div><div class="metric"><strong class="ok">1</strong><span>fonte visual: <code>.foxxdesk/assets/icon.png</code></span></div><div class="metric"><strong class="ok">runtime</strong><span>perfil padrão de atualização e CI</span></div></div><h3>Ordem do prepare</h3><pre><code>config → hooks CI → hbb_common compatível → rebrand runtime → ícones → estado/hash → validate → build</code></pre><div class="callout good"><b>Regra:</b> arquivos de código não são substituídos por snapshots antigos. O rebrand altera somente trechos conhecidos. Arquivos upstream renomeados são preservados, exceto o <code>RustDesk.wxs</code> quando o <code>FoxxDesk.wxs</code> já existe, pois o WiX compila os dois e gera IDs duplicados.</div></section>
+<section class="card" id="erro-icon"><h2>Correção do erro do GitHub Actions</h2><pre><code>ERRO: Fonte ausente: .../.foxxdesk/assets/icon.png</code></pre><p>O v2 não aceita qualquer fallback. Se o master estiver ausente, testa os caminhos de <code>icons.fallback_sources</code> e compara o SHA-256 com <code>.foxxdesk/icon-state.json</code>. Só uma imagem já conhecida como FoxxDesk pode recriar o master.</p><div class="callout danger"><b>Proteção:</b> se <code>res/icon.png</code> tiver sido sobrescrito pelo upstream e o hash não bater, o build falha. Ele não aplica silenciosamente o logo errado.</div><pre><code>git add .gitignore .gitattributes .foxxdesk scripts .github
+git ls-files .foxxdesk/assets/icon.png
+# se não aparecer:
+git add -f .foxxdesk/assets/icon.png .foxxdesk/icon-state.json</code></pre></section>
+<section class="card" id="config"><h2>JSON central</h2><p>O antigo <code>.foxxdesk/brand.json</code> deixou de ser requisito. Se ainda existir, apenas campos vazios podem ser migrados uma vez; depois edite somente o arquivo central.</p><table><tr><th>Seção</th><th>Função</th></tr><tr><td><code>brand</code></td><td>nome público, slug, empresa, mantenedor e homepage</td></tr><tr><td><code>network</code></td><td>server, relay e chave pública hbbs</td></tr><tr><td><code>icons</code></td><td>fonte, qualidade, descoberta, fallback e iOS</td></tr><tr><td><code>rebrand</code></td><td>perfil, scan, cleanup e proteções</td></tr><tr><td><code>upstream</code></td><td>RustDesk ref e pins de hbb_common</td></tr><tr><td><code>build</code></td><td>flags conservadoras do build.py</td></tr><tr><td><code>safety</code></td><td>invariantes que devem falhar cedo</td></tr></table><div class="callout"><b>Slug:</b> mantenha <code>foxxdesk</code>. Para mudar identificadores internos é necessário habilitar explicitamente <code>allow_internal_slug_change</code>.</div></section>
+<section class="card" id="icons"><h2>Ícones · perfil best</h2><p>A fonte atual 1024×1024 atende a configuração recomendada. O perfil <code>best</code> usa Lanczos, preserva proporção, não recorta a arte e grava PNG lossless com otimização.</p><table><tr><th>Campo</th><th>Padrão</th><th>Uso</th></tr><tr><td><code>source</code></td><td>.foxxdesk/assets/icon.png</td><td>fonte oficial</td></tr><tr><td><code>discover_by_name</code></td><td>true</td><td>busca nomes conhecidos apenas em raízes de plataforma seguras</td></tr><tr><td><code>min_source_size</code></td><td>512</td><td>abaixo disso o prepare falha</td></tr><tr><td><code>recommended_source_size</code></td><td>1024</td><td>qualidade recomendada</td></tr><tr><td><code>padding_ratio</code></td><td>0.0</td><td>padding transparente opcional</td></tr><tr><td><code>png_compress_level</code></td><td>9</td><td>compressão sem perda</td></tr></table><p>iOS é achatado em RGB; <code>ic_stat_logo.png</code> vira máscara branca/alpha. SVG existente preserva <code>width</code>, <code>height</code> e <code>viewBox</code>. <code>res/logo-header.svg</code> e <code>res/design.svg</code> são protegidos.</p></section>
+<section class="card" id="profiles"><h2>Perfis de rebrand</h2><table><tr><th>Perfil</th><th>Quando usar</th></tr><tr><td><code>safe</code></td><td>núcleo mínimo, correções pequenas</td></tr><tr><td><code>runtime</code></td><td><b>padrão</b>; produto/build/UI sem documentação e sem APIs de plataforma do hbb_common</td></tr><tr><td><code>full</code></td><td>primeira conversão ou auditoria explícita</td></tr></table><pre><code># normal
+python3 scripts/foxxdesk_prepare.py --apply --yes --sync-deps
+
+# bootstrap/full
+python3 scripts/foxxdesk_prepare.py --apply --yes --sync-deps --bootstrap</code></pre></section>
+<section class="card" id="hbb"><h2>hbb_common</h2><p>O source e o <code>hbb_common</code> precisam ser da mesma linha. Para RustDesk 1.4.9 o pin é:</p><pre><code>7e1c392c62d39c364127307cd408421dd5f8cfb0</code></pre><p>O sincronizador nunca baixa a branch <code>main</code> de forma independente.</p></section>
+<section class="card" id="actions"><h2>GitHub Actions</h2><p>O composite action instala <code>Pillow&gt;=10,&lt;13</code> e chama o prepare em modo CI. Cada job que faz checkout recebe o mesmo processo antes de compilar.</p><pre><code>uses: ./.github/actions/prepare-foxxdesk</code></pre><p>O preflight usa o JSON central e o perfil <code>runtime</code>; a matriz completa do FoxxDesk continua sendo disparada via <code>workflow_dispatch</code>.</p></section>
+<section class="card" id="commands"><h2>Comandos</h2><pre><code># atualizar/preparar
+python3 scripts/foxxdesk_prepare.py --target . --apply --yes --sync-deps
+
+# validar
+python3 scripts/foxxdesk_validate.py --target .
+
+# simular
+python3 scripts/foxxdesk_prepare.py --target . --dry-run
+
+# build resolvido sem executar
+python3 scripts/foxxdesk_build.py --target . --dry-run
+
+# preparar + build local
+python3 scripts/foxxdesk_build.py --target . --prepare</code></pre><p>Argumentos principais: <code>--ci</code>, <code>--bootstrap</code>, <code>--force-sync-deps</code>, <code>--profile safe|runtime|full</code>, <code>--skip-icons</code> e <code>--skip-validate</code>.</p></section>
+<section class="card" id="checklist"><h2>Checklist</h2><pre><code>python3 -m py_compile scripts/*.py
+python3 scripts/foxxdesk_prepare.py --apply --yes --sync-deps
+python3 scripts/foxxdesk_validate.py
+git status --short
+git ls-files .foxxdesk/assets/icon.png
+git add .
+git commit -m "chore: prepare FoxxDesk update"
+git push</code></pre><div class="callout good">Depois de estabilizar uma atualização, o segundo prepare deve ser idempotente: rebrand 0 e ícones 0 quando nada mudou.</div></section>
+</main></div><div class="footer">FoxxDesk resilience v2 · documentação local standalone</div></div>
+<script>
+const q=document.getElementById('search'),cards=[...document.querySelectorAll('.card')];q.addEventListener('input',()=>{const v=q.value.toLowerCase().trim();cards.forEach(c=>c.style.display=!v||c.innerText.toLowerCase().includes(v)?'block':'none')});
+</script>
+</body></html>

@@ -11,13 +11,15 @@ import argparse
 import sys
 from pathlib import Path
 
-SCRIPT_VERSION = "foxxdesk-ci-hooks-v1-2026-09-04"
+SCRIPT_VERSION = "foxxdesk-ci-hooks-v2-manual-build-2026-09-05"
 HOOK_USES = "uses: ./.github/actions/prepare-foxxdesk"
 TARGETS = [
+    # Only workflows used by the manual FoxxDesk build need the prepare hook.
+    # Do not inject FoxxDesk preparation into upstream CI/push/PR workflows.
     ".github/workflows/flutter-build.yml",
     ".github/workflows/bridge.yml",
-    ".github/workflows/ci.yml",
 ]
+FOXDESK_OWNED_WORKFLOW = ".github/workflows/foxxdesk-build.yml"
 
 
 def leading_spaces(s: str) -> int:
@@ -112,6 +114,48 @@ def install_hooks(path: Path) -> int:
     return changed
 
 
+def remove_hook_steps(path: Path) -> int:
+    """Remove FoxxDesk prepare steps from workflows that are not part of manual build.
+
+    Older FoxxDesk packages injected the hook into ci.yml, causing normal push/PR CI
+    to run the rebrand/dependency preparation. We only keep hooks in bridge.yml and
+    flutter-build.yml, which are reached by the manual FoxxDesk Build workflow.
+    """
+    if not path.is_file():
+        return 0
+    lines = path.read_text(encoding="utf-8").splitlines()
+    indexes = [i for i, line in enumerate(lines) if HOOK_USES in line and not line.lstrip().startswith("#")]
+    changed = 0
+    for idx in reversed(indexes):
+        try:
+            start, end, _ = step_bounds(lines, idx)
+        except ValueError:
+            continue
+        # Trim one adjacent blank line to avoid accumulating whitespace.
+        if start > 0 and not lines[start - 1].strip():
+            start -= 1
+        del lines[start:end]
+        changed += 1
+    if changed:
+        path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return changed
+
+
+def unexpected_hook_files(root: Path) -> list[str]:
+    workflows = root / ".github/workflows"
+    if not workflows.is_dir():
+        return []
+    allowed = set(TARGETS) | {FOXDESK_OWNED_WORKFLOW}
+    found: list[str] = []
+    for path in sorted(list(workflows.glob("*.yml")) + list(workflows.glob("*.yaml"))):
+        rel = path.relative_to(root).as_posix()
+        if rel in allowed:
+            continue
+        if HOOK_USES in path.read_text(encoding="utf-8", errors="ignore"):
+            found.append(rel)
+    return found
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Instala ou valida hooks FoxxDesk nos workflows upstream")
     p.add_argument("--target", default=".")
@@ -125,10 +169,18 @@ def main() -> int:
     args = parse_args()
     root = Path(args.target).expanduser().resolve()
     if args.apply:
-        total = 0
+        installed = 0
+        removed = 0
         for rel in TARGETS:
-            total += install_hooks(root / rel)
-        print(f"FoxxDesk CI hooks OK: {total} hook(s) instalado(s) ({SCRIPT_VERSION})")
+            installed += install_hooks(root / rel)
+        workflows = root / ".github/workflows"
+        if workflows.is_dir():
+            allowed = set(TARGETS) | {FOXDESK_OWNED_WORKFLOW}
+            for path in sorted(list(workflows.glob("*.yml")) + list(workflows.glob("*.yaml"))):
+                rel = path.relative_to(root).as_posix()
+                if rel not in allowed:
+                    removed += remove_hook_steps(path)
+        print(f"FoxxDesk CI hooks OK: {installed} instalado(s), {removed} hook(s) legado(s) removido(s) ({SCRIPT_VERSION})")
         return 0
 
     errors: list[str] = []
@@ -140,8 +192,10 @@ def main() -> int:
         missing = missing_hooks(path)
         if missing:
             errors.append(f"{rel}: checkout(s) sem prepare nas linhas {', '.join(map(str, missing))}")
+    for rel in unexpected_hook_files(root):
+        errors.append(f"{rel}: contém hook FoxxDesk legado fora do fluxo manual")
     if errors:
-        print("Hooks de CI FoxxDesk ausentes. Rode `python scripts/foxxdesk_prepare.py --apply --yes --sync-deps` e faça commit:", file=sys.stderr)
+        print("Hooks de CI FoxxDesk inconsistentes. Rode `python scripts/foxxdesk_prepare.py --apply --yes --sync-deps` e faça commit:", file=sys.stderr)
         for e in errors:
             print(f" - {e}", file=sys.stderr)
         return 2

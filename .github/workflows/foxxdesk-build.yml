@@ -1,6 +1,7 @@
 name: FoxxDesk Build
 
 on:
+  # Manual only by design. Build starts only from Actions > FoxxDesk Build > Run workflow.
   workflow_dispatch:
     inputs:
       upload_artifact:
@@ -13,9 +14,6 @@ on:
         required: true
         type: string
         default: "foxxdesk-nightly"
-  pull_request:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
@@ -27,37 +25,16 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout source code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           submodules: recursive
 
-      - name: Verify committed FoxxDesk CI hooks
-        shell: bash
-        run: python3 scripts/foxxdesk_ci_hooks.py --target . --check
-
-      - name: Prepare FoxxDesk source
+      - name: Prepare and validate FoxxDesk source
         uses: ./.github/actions/prepare-foxxdesk
-
-      - name: Show resolved build tuple
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import json, re
-          from pathlib import Path
-          cargo = Path("Cargo.toml").read_text(encoding="utf-8")
-          version = re.search(r'(?ms)^\[package\].*?^version\s*=\s*"([^"]+)"', cargo).group(1)
-          cfg = json.loads(Path(".foxxdesk/foxxdesk.config.json").read_text(encoding="utf-8"))
-          marker = Path("libs/hbb_common/.foxxdesk_upstream_commit")
-          hbb = marker.read_text().strip() if marker.exists() else "git-submodule/checked-out"
-          print(f"FoxxDesk/RustDesk version: {version}")
-          print(f"hbb_common: {hbb}")
-          print(f"server: {cfg['network']['server']}")
-          PY
 
   build:
     name: FoxxDesk reusable Flutter build
     needs: preflight
-    if: ${{ github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: write
       actions: read

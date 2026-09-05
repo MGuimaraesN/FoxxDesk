@@ -58,7 +58,9 @@
   "github_actions": {
     "enabled": true,
     "validate_before_build": true,
-    "install_icon_dependencies": true
+    "install_icon_dependencies": true,
+    "manual_build_only": true,
+    "prepare_only_manual_build_path": true
   },
   "safety": {
     "fail_on_missing_required_files": true,
@@ -68,7 +70,7 @@
     "require_nonempty_key": true,
     "allow_unverified_icon_fallback": false
   },
-  "version": 2,
+  "version": 3,
   "upstream": {
     "rustdesk_ref": "auto",
     "sync_hbb_common": true,
