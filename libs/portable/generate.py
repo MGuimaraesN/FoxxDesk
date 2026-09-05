@@ -100,63 +100,11 @@ if __name__ == '__main__':
         options.executable = 'rustdesk.exe'
     if not options.executable.startswith(folder):
         options.executable = folder + '/' + options.executable
-    folder_abs = os.path.abspath(folder)
-    requested_exe_abs = os.path.abspath(options.executable)
-
-    # FoxxDesk portable packer path guard v17.
-    # GitHub Actions on Windows may mix /d/a/... and D:\a\... paths, and
-    # older workflow lines may still pass ../../rustdesk/rustdesk.exe while
-    # -f already points to ../../foxxdesk/. Only package an executable that is
-    # actually inside the source folder.
-    def _is_inside_source(path: str) -> bool:
-        try:
-            folder_norm = os.path.normcase(os.path.normpath(folder_abs))
-            path_norm = os.path.normcase(os.path.normpath(path))
-            return os.path.commonpath([folder_norm, path_norm]) == folder_norm
-        except ValueError:
-            return False
-
-    fallback_names = []
-    requested_name = os.path.basename(requested_exe_abs)
-    if requested_name:
-        fallback_names.append(requested_name)
-    fallback_names += ["foxxdesk.exe", "FoxxDesk.exe", "rustdesk.exe", "RustDesk.exe"]
-
-    exe_abs = None
-    if _is_inside_source(requested_exe_abs) and os.path.isfile(requested_exe_abs):
-        exe_abs = requested_exe_abs
-    else:
-        seen_names = set()
-        for name in fallback_names:
-            if not name or name in seen_names:
-                continue
-            seen_names.add(name)
-            candidate = os.path.join(folder_abs, name)
-            if os.path.isfile(candidate):
-                if os.path.abspath(candidate) != requested_exe_abs:
-                    print(f"Executable requested as {requested_exe_abs}; using source executable {candidate}")
-                exe_abs = candidate
-                break
-
-    if exe_abs is None:
-        if not _is_inside_source(requested_exe_abs):
-            print("The executable must locate in source folder")
-            print(f"  source folder: {folder_abs}")
-            print(f"  executable:    {requested_exe_abs}")
-            print("  tried inside source folder:")
-            for name in dict.fromkeys(fallback_names):
-                print(f"  - {os.path.join(folder_abs, name)}")
-        else:
-            print(f"Executable not found: {requested_exe_abs}")
-        if os.path.isdir(folder_abs):
-            print("Source folder contents:")
-            for item in sorted(os.listdir(folder_abs)):
-                print(f"  - {item}")
-        else:
-            print(f"Source folder does not exist: {folder_abs}")
+    exe: str = os.path.abspath(options.executable)
+    if not exe.startswith(os.path.abspath(folder)):
+        print("The executable must locate in source folder")
         exit(-1)
-
-    exe = './' + os.path.relpath(exe_abs, folder_abs).replace(os.sep, '/')
+    exe = '.' + exe[len(os.path.abspath(folder)):]
     print("Executable path: " + exe)
     print("Compression level: " + str(options.level))
     md5_table = generate_md5_table(folder, options.level)

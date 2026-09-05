@@ -2201,11 +2201,6 @@ pub fn read_custom_client(config: &str) {
 
     if let Some(app_name) = data.remove("app-name") {
         if let Some(app_name) = app_name.as_str() {
-            let app_name = if app_name.eq_ignore_ascii_case("foxxdesk") {
-                "FoxxDesk"
-            } else {
-                app_name
-            };
             *config::APP_NAME.write().unwrap() = app_name.to_owned();
         }
     }
