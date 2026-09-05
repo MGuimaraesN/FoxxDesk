@@ -5,11 +5,11 @@ Design rules:
 - one config: .foxxdesk/foxxdesk.config.json
 - one visual source: icons.source (normally .foxxdesk/assets/icon.png)
 - hbb_common is synced to the matching RustDesk revision before branding
-- safe rebrand is the normal update/CI mode; full is explicit bootstrap/audit
+- runtime rebrand is the normal local update mode; full is explicit bootstrap/audit
 - icon assets are regenerated from the master source, not restored blindly from
   an old snapshot; the overlay is only an optional cache/fallback
-- missing master icon in CI can be safely seeded from a fallback only when its
-  SHA-256 matches the last committed icon state
+- missing master icon can be safely seeded locally from a fallback only when its
+  SHA-256 matches the last committed icon state; CI itself is read-only
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-SCRIPT_VERSION = "foxxdesk-prepare-v4-deterministic-ci-2026-09-05"
+SCRIPT_VERSION = "foxxdesk-prepare-v6-submodule-safe-2026-09-05"
 STATE_REL = Path('.foxxdesk/icon-state.json')
 OVERLAY_MANIFEST_REL = Path('.foxxdesk/icon-overlay-manifest.json')
 
@@ -107,7 +107,7 @@ def restore_overlay_cache(root: Path, master: Path) -> int:
     if not expected or expected != current:
         raise RuntimeError(
             "Pillow não está disponível e o cache de ícones não corresponde ao ícone mestre atual. "
-            "Instale Pillow (python3 -m pip install Pillow) ou rode novamente no GitHub Actions."
+            "Instale Pillow (python3 -m pip install Pillow) e rode novamente o prepare local."
         )
     manifest_path = root / OVERLAY_MANIFEST_REL
     if not manifest_path.is_file():
@@ -247,6 +247,7 @@ def run_rebrand(root: Path, cfg: dict[str, Any], profile: str, *, dry_run: bool)
         '--profile', profile,
         '--skip-hbb-common-download',
         '--icons-managed-externally',
+        '--preserve-hbb-common',
         '--display-name', str(brand['display_name']),
         '--slug', str(brand['slug']),
         '--company', str(brand.get('company') or 'FoxxDesk'),
@@ -288,6 +289,13 @@ def check_ci_hooks(root: Path) -> None:
     )
 
 
+def apply_runtime_defaults(root: Path) -> None:
+    subprocess.run(
+        [sys.executable, str(root / 'scripts/foxxdesk_runtime_defaults.py'), '--target', str(root), '--apply'],
+        cwd=str(root), check=True,
+    )
+
+
 def validate(root: Path) -> None:
     subprocess.run(
         [sys.executable, str(root / 'scripts/foxxdesk_validate.py'), '--target', str(root)],
@@ -302,7 +310,7 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument('--apply', action='store_true')
     mode.add_argument('--dry-run', action='store_true')
     p.add_argument('--yes', action='store_true', help='Compatibilidade; processo é não interativo')
-    p.add_argument('--ci', action='store_true', help='Modo CI: sincronização exata + profile ci_profile + validação')
+    p.add_argument('--ci', action='store_true', help='Modo CI somente leitura: valida a árvore commitada; não aplica rebrand nem sincroniza arquivos')
     p.add_argument('--bootstrap', action='store_true', help='Rebrand inicial/auditoria: usa bootstrap_profile (normalmente full)')
     p.add_argument('--sync-deps', action='store_true')
     p.add_argument('--force-sync-deps', action='store_true')
@@ -333,32 +341,39 @@ def main() -> int:
         else:
             profile = str(rebrand_cfg.get('profile', 'runtime'))
 
+        # V6: CI is intentionally read-only. Build runners compile the exact tree
+        # that was prepared locally and committed. This avoids injecting hooks into
+        # every upstream checkout and survives workflow reorganizations much better.
+        if args.ci:
+            check_ci_hooks(root)
+            subprocess.run(
+                [sys.executable, str(root / 'scripts/foxxdesk_validate.py'), '--target', str(root), '--ci'],
+                cwd=str(root), check=True,
+            )
+            print(f"FoxxDesk prepare OK ({SCRIPT_VERSION}, profile={profile}, modo=ci-read-only)")
+            return 0
+
         if apply:
-            if args.ci:
-                # Reusable workflow graphs are resolved before jobs run. CI may
-                # validate committed hooks, but cannot repair them for this run.
-                check_ci_hooks(root)
-            else:
-                ensure_ci_hooks(root)
+            # Local preparation removes legacy per-checkout hooks from upstream
+            # workflows; it never injects new FoxxDesk steps into them.
+            ensure_ci_hooks(root)
 
         should_sync = apply and (
-            args.sync_deps or args.force_sync_deps or args.ci or bool(cfg.get('upstream', {}).get('sync_hbb_common', True))
+            args.sync_deps or args.force_sync_deps or bool(cfg.get('upstream', {}).get('sync_hbb_common', True))
         )
         if should_sync:
-            sync_dependency(root, force=args.force_sync_deps, write_pin=not args.ci)
+            sync_dependency(root, force=args.force_sync_deps, write_pin=True)
 
         run_rebrand(root, cfg, profile, dry_run=not apply)
 
         if apply:
-            if args.ci:
-                check_ci_hooks(root)
-            else:
-                ensure_ci_hooks(root)
+            apply_runtime_defaults(root)
+            ensure_ci_hooks(root)
             if not args.skip_icons:
                 apply_icons(
                     root, cfg, apply=True,
                     force_regenerate=args.regenerate_icons,
-                    ci_mode=args.ci,
+                    ci_mode=False,
                 )
 
         if apply and not args.skip_validate:

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Fast FoxxDesk preflight for CI and local updates."""
+"""FoxxDesk validation/preflight.
+
+V5 CI is validation-only: it never reapplies branding, rewrites workflows, installs
+image dependencies or replaces hbb_common during a build. The prepared source is
+committed first; CI proves that the committed tree is coherent before compilation.
+"""
 from __future__ import annotations
 
 import argparse
@@ -9,8 +14,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
-SCRIPT_VERSION = 'foxxdesk-validate-v3-cross-platform-manual-ci-2026-09-05'
+SCRIPT_VERSION = 'foxxdesk-validate-v6-submodule-safe-2026-09-05'
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from foxxdesk_config import CONFIG_REL, load_config  # noqa: E402
 
@@ -28,28 +34,165 @@ def same_file(a: Path, b: Path) -> bool:
 
 
 def dependency_compatibility(root: Path, cfg: dict) -> list[str]:
-    sys.path.insert(0, str(root / 'scripts'))
+    scripts_dir = str(root / 'scripts')
+    sys.path.insert(0, scripts_dir)
     try:
         import foxxdesk_sync_hbb_common as sync  # type: ignore
         errors = list(sync.compatibility_errors(root))
         try:
             expected, source = sync.expected_commit(root, cfg)
             current = sync.current_hbb_commit(root)
-            if current is not None and current != expected:
+            if current is None:
+                # A vendored/copied tree can be API-compatible without .git metadata.
+                # In CI with a real submodule, current should normally be available.
+                pass
+            elif current != expected:
                 errors.append(f'revisão {current} != {expected} ({source})')
         except Exception as exc:
             errors.append(f'não foi possível determinar a revisão esperada: {exc}')
         return errors
     finally:
         try:
-            sys.path.remove(str(root / 'scripts'))
+            sys.path.remove(scripts_dir)
         except ValueError:
             pass
+
+
+def xml_string_value(text: str, name: str) -> Optional[str]:
+    m = re.search(
+        rf'<string\b[^>]*\bname\s*=\s*["\']{re.escape(name)}["\'][^>]*>\s*([^<]+?)\s*</string\s*>',
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return m.group(1).strip() if m else None
+
+
+def android_application_label(manifest: str) -> Optional[str]:
+    # Search only the opening <application ...> tag, not activity/service labels.
+    m = re.search(r'<application\b([^>]*)>', manifest, flags=re.IGNORECASE | re.DOTALL)
+    if not m:
+        return None
+    a = re.search(r'android:label\s*=\s*["\']([^"\']+)["\']', m.group(1), flags=re.IGNORECASE)
+    return a.group(1).strip() if a else None
+
+
+def xcconfig_value(text: str, key: str) -> Optional[str]:
+    m = re.search(rf'(?m)^\s*{re.escape(key)}\s*=\s*(.*?)\s*$', text)
+    if not m:
+        return None
+    return m.group(1).strip().strip('"\'')
+
+
+def rc_string_value(text: str, key: str) -> Optional[str]:
+    m = re.search(
+        rf'VALUE\s+["\']{re.escape(key)}["\']\s*,\s*["\']([^"\']*)["\']',
+        text,
+        flags=re.IGNORECASE,
+    )
+    return m.group(1).rstrip('\\0').strip() if m else None
+
+
+def validate_public_brand(root: Path, display: str) -> tuple[list[str], list[str]]:
+    """Semantic platform checks that tolerate upstream formatting changes."""
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    strings_path = root / 'flutter/android/app/src/main/res/values/strings.xml'
+    strings_value: Optional[str] = None
+    if strings_path.is_file():
+        strings_value = xml_string_value(read(strings_path), 'app_name')
+        if strings_value is None:
+            warnings.append(f'Android app_name: string app_name não encontrada em {strings_path.relative_to(root)}')
+        elif strings_value != display:
+            errors.append(f'Android app_name = {strings_value!r}, esperado {display!r}')
+
+    manifest_path = root / 'flutter/android/app/src/main/AndroidManifest.xml'
+    if manifest_path.is_file():
+        label = android_application_label(read(manifest_path))
+        if label is None:
+            warnings.append(f'Android manifest: android:label da aplicação não encontrado em {manifest_path.relative_to(root)}')
+        elif label == '@string/app_name':
+            if strings_value is not None and strings_value != display:
+                errors.append(f'Android manifest usa @string/app_name, mas app_name = {strings_value!r}, esperado {display!r}')
+        elif label != display:
+            errors.append(f'Android application label = {label!r}, esperado {display!r} ou @string/app_name')
+
+    mac_path = root / 'flutter/macos/Runner/Configs/AppInfo.xcconfig'
+    if mac_path.is_file():
+        value = xcconfig_value(read(mac_path), 'PRODUCT_NAME')
+        if value is None:
+            warnings.append(f'macOS product name: PRODUCT_NAME não encontrado em {mac_path.relative_to(root)}')
+        elif value != display:
+            errors.append(f'macOS PRODUCT_NAME = {value!r}, esperado {display!r}')
+
+    win_path = root / 'flutter/windows/runner/Runner.rc'
+    if win_path.is_file():
+        value = rc_string_value(read(win_path), 'ProductName')
+        if value is None:
+            warnings.append(f'Windows ProductName: campo ProductName não encontrado em {win_path.relative_to(root)}')
+        elif value != display:
+            errors.append(f'Windows ProductName = {value!r}, esperado {display!r}')
+
+    return errors, warnings
+
+
+def validate_icon_cache(root: Path, source: Path, *, strict: bool) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    state_path = root / '.foxxdesk/icon-state.json'
+    manifest_path = root / '.foxxdesk/icon-overlay-manifest.json'
+    overlay_root = root / '.foxxdesk/icon-overlay'
+
+    if not state_path.is_file():
+        (errors if strict else warnings).append('icon-state.json ausente; rode foxxdesk_prepare.py localmente e faça commit')
+        return errors, warnings
+
+    try:
+        state = json.loads(state_path.read_text(encoding='utf-8'))
+        expected = str(state.get('master_sha256', '')).lower()
+        current = digest(source)
+        if not expected or expected != current:
+            errors.append('icon-state.json não corresponde ao ícone mestre atual; rode foxxdesk_prepare.py')
+    except Exception as exc:
+        errors.append(f'icon-state.json inválido: {exc}')
+        return errors, warnings
+
+    if not manifest_path.is_file():
+        (errors if strict else warnings).append('icon-overlay-manifest.json ausente; rode foxxdesk_prepare.py localmente e faça commit')
+        return errors, warnings
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        files = manifest.get('files', [])
+        if not isinstance(files, list) or not files:
+            errors.append('icon-overlay-manifest.json não contém lista de assets')
+            return errors, warnings
+        mismatches: list[str] = []
+        for rel in files:
+            if not isinstance(rel, str) or not rel:
+                continue
+            cached = overlay_root / rel
+            actual = root / rel
+            if not cached.is_file():
+                mismatches.append(f'{rel} (cache ausente)')
+            elif not actual.is_file():
+                mismatches.append(f'{rel} (asset ausente)')
+            elif not same_file(cached, actual):
+                mismatches.append(f'{rel} (asset != cache)')
+        if mismatches:
+            preview = ', '.join(mismatches[:8])
+            extra = f' (+{len(mismatches)-8})' if len(mismatches) > 8 else ''
+            errors.append(f'cache determinístico de ícones divergente: {preview}{extra}; rode foxxdesk_prepare.py e faça commit')
+    except Exception as exc:
+        errors.append(f'icon-overlay-manifest.json inválido: {exc}')
+
+    return errors, warnings
 
 
 def main() -> int:
     p = argparse.ArgumentParser(description='Valida configuração, brand, ícones e compatibilidade FoxxDesk')
     p.add_argument('--target', default='.')
+    p.add_argument('--ci', action='store_true', help='Preflight estrito e somente leitura para GitHub Actions')
     args = p.parse_args()
     root = Path(args.target).expanduser().resolve()
     errors: list[str] = []
@@ -62,16 +205,13 @@ def main() -> int:
         return 2
 
     if migrated:
-        warnings.append('brand.json ainda contém valores usados apenas para migração; commit o foxxdesk.config.json atualizado e remova o legado quando conveniente')
+        warnings.append('brand.json contém valores legados; commit o foxxdesk.config.json atualizado')
 
     brand = cfg['brand']
     network = cfg['network']
     icons = cfg['icons']
     display = str(brand['display_name'])
     slug = str(brand['slug'])
-    server = str(network['server'])
-    relay = str(network.get('relay') or server)
-    key = str(network['key'])
 
     cargo = root / 'Cargo.toml'
     if cargo.is_file():
@@ -81,32 +221,32 @@ def main() -> int:
     else:
         errors.append('Cargo.toml ausente')
 
+    # hbb_common is an upstream submodule in V6. Brand/server/key defaults must
+    # live in the parent crate, never in submodule files.
     hbb_cfg = root / 'libs/hbb_common/src/config.rs'
-    if hbb_cfg.is_file():
-        text = read(hbb_cfg)
-        invariants = [
-            (f'RwLock::new("{display}".to_owned())', 'APP_NAME'),
-            (f'pub const DEFAULT_RENDEZVOUS_SERVER: &str = "{server}";', 'servidor padrão'),
-            (f'pub const DEFAULT_RELAY_SERVER: &str = "{relay}";', 'relay padrão'),
-            (f'pub const DEFAULT_CUSTOM_CLIENT_KEY: &str = "{key}";', 'chave pública padrão'),
-        ]
-        for needle, label in invariants:
-            if needle not in text:
-                errors.append(f'hbb_common config: {label} não aplicado')
-    else:
+    if not hbb_cfg.is_file():
         errors.append('libs/hbb_common/src/config.rs ausente')
+    else:
+        hbb_text = read(hbb_cfg)
+        legacy_markers = [
+            'DEFAULT_RENDEZVOUS_SERVER',
+            'DEFAULT_RELAY_SERVER',
+            'DEFAULT_CUSTOM_CLIENT_KEY',
+            'RwLock::new("FoxxDesk".to_owned())',
+        ]
+        if any(marker in hbb_text for marker in legacy_markers):
+            errors.append('hbb_common contém branding FoxxDesk legado; rode o prepare para restaurar o submódulo upstream')
 
-    optional_invariants = [
-        (root / 'flutter/android/app/src/main/res/values/strings.xml', f'>{display}<', 'Android app_name'),
-        (root / 'flutter/android/app/src/main/AndroidManifest.xml', f'android:label="{display}"', 'Android manifest'),
-        (root / 'flutter/macos/Runner/Configs/AppInfo.xcconfig', f'PRODUCT_NAME = {display}', 'macOS product name'),
-        (root / 'flutter/windows/runner/Runner.rc', f'VALUE "ProductName", "{display}"', 'Windows ProductName'),
-    ]
-    for path, needle, label in optional_invariants:
-        if path.exists() and needle not in read(path):
-            # Safe profile intentionally avoids rewriting every optional UI file.
-            # Warn rather than fail unless a bootstrap/full run is expected.
-            warnings.append(f'{label}: brand não encontrado em {path.relative_to(root)}')
+    runtime = subprocess.run(
+        [sys.executable, str(root / 'scripts/foxxdesk_runtime_defaults.py'), '--target', str(root), '--check'],
+        cwd=str(root), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    if runtime.returncode != 0:
+        errors.append('defaults runtime FoxxDesk ausentes/desatualizados: ' + (runtime.stderr.strip() or runtime.stdout.strip()))
+
+    brand_errors, brand_warnings = validate_public_brand(root, display)
+    errors.extend(brand_errors)
+    warnings.extend(brand_warnings)
 
     if icons.get('enabled', True):
         source = root / str(icons.get('source', '.foxxdesk/assets/icon.png'))
@@ -116,18 +256,9 @@ def main() -> int:
             res_icon = root / 'res/icon.png'
             if not same_file(source, res_icon):
                 errors.append('res/icon.png não corresponde ao ícone mestre configurado')
-            state_path = root / '.foxxdesk/icon-state.json'
-            if state_path.is_file():
-                try:
-                    state = json.loads(state_path.read_text(encoding='utf-8'))
-                    expected = str(state.get('master_sha256', '')).lower()
-                    current = digest(source)
-                    if expected and expected != current:
-                        errors.append('icon-state.json não corresponde ao ícone mestre atual; rode foxxdesk_prepare.py')
-                except Exception as exc:
-                    errors.append(f'icon-state.json inválido: {exc}')
-            else:
-                warnings.append('icon-state.json ausente; o próximo prepare irá criá-lo')
+            icon_errors, icon_warnings = validate_icon_cache(root, source, strict=args.ci)
+            errors.extend(icon_errors)
+            warnings.extend(icon_warnings)
 
     errors.extend(f'hbb_common: {e}' for e in dependency_compatibility(root, cfg))
 
@@ -136,9 +267,8 @@ def main() -> int:
         own = read(own_wf)
         if 'workflow_dispatch:' not in own:
             errors.append('foxxdesk-build.yml: workflow_dispatch ausente')
-        for forbidden in ('\npush:', '\npull_request:', '\nschedule:'):
-            if forbidden in own:
-                errors.append(f'foxxdesk-build.yml: gatilho automático proibido detectado: {forbidden.strip(":\n")}')
+        if re.search(r'(?m)^\s{2}(push|pull_request|schedule)\s*:', own):
+            errors.append('foxxdesk-build.yml: gatilho automático proibido detectado')
     else:
         errors.append('workflow FoxxDesk manual ausente: .github/workflows/foxxdesk-build.yml')
 
@@ -150,6 +280,7 @@ def main() -> int:
         'scripts/foxxdesk_ci_hooks.py',
         'scripts/foxxdesk_prepare.py',
         'scripts/foxxdesk_validate.py',
+        'scripts/foxxdesk_runtime_defaults.py',
     ]
     for rel in helpers:
         path = root / rel
@@ -168,7 +299,15 @@ def main() -> int:
         cwd=str(root), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
     if hooks.returncode != 0:
-        errors.append('hooks de GitHub Actions ausentes: ' + (hooks.stderr.strip() or hooks.stdout.strip()))
+        errors.append('layout de GitHub Actions inconsistente: ' + (hooks.stderr.strip() or hooks.stdout.strip()))
+
+    if args.ci and (root / '.git').exists():
+        dirty = subprocess.run(
+            ['git', 'status', '--porcelain', '--untracked-files=no', '--', 'libs/hbb_common'],
+            cwd=str(root), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        if dirty.returncode == 0 and dirty.stdout.strip():
+            errors.append('libs/hbb_common está modificado no checkout; o submódulo deve permanecer upstream/limpo na V6')
 
     for item in warnings:
         print(f'AVISO: {item}')
@@ -176,9 +315,17 @@ def main() -> int:
         print('\nPRECHECK FALHOU:', file=sys.stderr)
         for item in errors:
             print(f' - {item}', file=sys.stderr)
+        if args.ci:
+            print(
+                '\nCI é somente leitura. Corrija localmente com:\n'
+                '  python3 scripts/foxxdesk_prepare.py --target . --apply --yes --sync-deps\n'
+                'depois faça commit/push das alterações antes de executar o build.',
+                file=sys.stderr,
+            )
         return 2
 
-    print(f'FoxxDesk validation OK ({SCRIPT_VERSION})')
+    mode = 'CI read-only' if args.ci else 'local'
+    print(f'FoxxDesk validation OK ({SCRIPT_VERSION}, {mode})')
     return 0
 
 

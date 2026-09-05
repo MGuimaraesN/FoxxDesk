@@ -1,51 +1,97 @@
-# Atualizar RustDesk sem perder o FoxxDesk
+# FoxxDesk — guia seguro de atualização upstream (V6)
 
-1. Faça backup/branch.
-2. Copie a nova versão upstream por cima preservando `.foxxdesk/`, `scripts/foxxdesk_*` e o workflow FoxxDesk.
-3. Rode:
+## 1. Atualize o RustDesk
+
+Aplique/copiei a nova versão upstream preservando os arquivos próprios do FoxxDesk:
+
+- `.foxxdesk/`
+- `scripts/foxxdesk_*.py`
+- `scripts/apply_foxxdesk_rebrand.py`
+- `scripts/apply_foxxdesk_icon.py`
+- `.github/actions/prepare-foxxdesk/`
+- `.github/workflows/foxxdesk-build.yml`
+
+Não substitua workflows upstream por snapshots antigos deste pacote: a V6 não inclui `flutter-build.yml`, `bridge.yml` nem `ci.yml`.
+
+## 2. Prepare localmente
 
 ```bash
 python3 scripts/foxxdesk_prepare.py --target . --apply --yes --sync-deps
+```
+
+O comando:
+
+1. carrega `.foxxdesk/foxxdesk.config.json`;
+2. remove hooks FoxxDesk legados de workflows upstream;
+3. resolve/sincroniza o `hbb_common` da mesma versão do RustDesk;
+4. restaura alterações FoxxDesk legadas que existiam dentro do submódulo;
+5. aplica o rebrand `runtime` fora de `hbb_common`;
+6. gera/atualiza `src/foxxdesk_defaults.rs` e os patches runtime mínimos;
+7. gera/confere os assets do ícone mestre;
+8. valida a árvore final.
+
+## 3. Valide explicitamente
+
+```bash
 python3 scripts/foxxdesk_validate.py --target .
 ```
 
-4. Rode o prepare uma segunda vez. Em uma árvore estável, ele deve ficar idempotente.
-5. Confira `git diff`/`rebrand_report.md`.
-6. Commit/push e execute **FoxxDesk Build** no Actions.
-
-## Primeira aplicação sobre um upstream limpo
-
-Use bootstrap apenas na primeira conversão ou auditoria total:
+## 4. Confirme arquivos que nunca devem ser alterados pelo FoxxDesk
 
 ```bash
-python3 scripts/foxxdesk_prepare.py --target . --apply --yes --sync-deps --bootstrap
+git diff -- .gitignore .gitattributes
 ```
 
-Depois volte para o perfil `runtime` padrão.
+A saída deve estar vazia, exceto se você mesmo já tivesse alterações nesses arquivos antes do prepare.
 
-## Se o Actions disser que o icon.png está ausente
-
-O v2 tenta recuperar `icons.source` de um fallback somente se o SHA-256 corresponder a `.foxxdesk/icon-state.json`. Mesmo assim, o correto é versionar o master:
+## 5. Revise e faça commit
 
 ```bash
-git add -f .foxxdesk/assets/icon.png .foxxdesk/icon-state.json
-git commit -m "fix: commit FoxxDesk master icon"
+git status --short
+git diff --submodule=log
+```
+
+Se `libs/hbb_common` mudou de commit, isso é o gitlink da revisão compatível e precisa entrar no commit.
+
+```bash
+git add -A
+git commit -m "chore: prepare FoxxDesk upstream update"
 git push
 ```
 
-## V3 — fluxo upstream-safe
+## 6. Compile manualmente
 
-A V3 não distribui `.gitignore`, `.gitattributes`, `ci.yml`, `bridge.yml`, `flutter-build.yml` ou arquivos `res/*` do RustDesk. Os hooks necessários são aplicados cirurgicamente sobre os workflows da versão presente na pasta.
+Abra:
 
-O workflow `FoxxDesk Build` é somente manual (`workflow_dispatch`). Hooks legados do FoxxDesk em `ci.yml` são removidos automaticamente.
+`GitHub > Actions > FoxxDesk Build > Run workflow`
 
-No Windows, `hbb_common` é preparado em staging no mesmo volume do workspace, evitando `WinError 17` e troca parcial de diretórios.
+Não existe gatilho automático de push, PR ou schedule no workflow FoxxDesk.
 
-## Resilience V4 (2026-09-05)
+O preflight do Actions é somente leitura. Se falhar, corrija **localmente**, faça novo commit e execute o workflow novamente.
 
-- CI usa overlay de ícones autenticado e não instala Pillow no runner.
-- Windows não valida `chmod +x` via filesystem; Ubuntu preflight valida os modos POSIX.
-- `FoxxDesk Build` é somente manual.
-- `.gitignore` da raiz é protegido e nunca é alterado.
-- Hooks são reparados localmente; CI apenas verifica se foram commitados.
+## Diagnóstico
 
+### hbb_common com alteração desconhecida
+
+```bash
+git -C libs/hbb_common status --short
+git -C libs/hbb_common diff
+```
+
+A V6 não apaga alterações desconhecidas automaticamente. Se você realmente quiser restaurar a revisão upstream compatível:
+
+```bash
+python3 scripts/foxxdesk_prepare.py --target . --apply --yes --force-sync-deps
+```
+
+### Verificar idempotência
+
+Rode o prepare novamente. Em estado estável, ele deve terminar com 0 alterações relevantes.
+
+### Trocar o ícone
+
+Substitua apenas:
+
+`.foxxdesk/assets/icon.png`
+
+Depois rode o prepare local novamente. Os assets derivados serão regenerados e o cache determinístico atualizado.

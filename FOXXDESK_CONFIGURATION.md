@@ -1,251 +1,265 @@
-# FoxxDesk — configuração e atualização resiliente v2
+# FoxxDesk — configuração e scripts V6
 
-Arquitetura para reaplicar o FoxxDesk sobre novas versões do RustDesk com alterações mínimas, reproduzíveis e verificáveis.
+## Arquitetura
 
-## Regra principal
+A V6 usa uma única configuração:
 
-- **Não substituir arquivos de código por snapshots antigos.** O rebrand usa patches textuais e guards.
-- **Uma única configuração:** `.foxxdesk/foxxdesk.config.json`.
-- **Uma única fonte visual:** `.foxxdesk/assets/icon.png`.
-- **Dependência compatível:** `hbb_common` é pinado à revisão da mesma versão do RustDesk; nunca segue `hbb_common/main` isoladamente.
-- **Update normal:** perfil `runtime`; `full` fica reservado a bootstrap/auditoria.
-- Arquivos upstream renomeados são preservados por padrão. A exceção automática é `RustDesk.wxs` quando `FoxxDesk.wxs` existe, porque o WiX compila ambos e gera IDs duplicados.
+`.foxxdesk/foxxdesk.config.json`
 
-## Fluxo recomendado
+Princípio operacional:
 
-Depois de copiar uma atualização do RustDesk por cima do projeto:
+**local prepara → Git registra → CI valida → build compila o commit**.
+
+O GitHub Actions não reaplica o rebrand. Isso é proposital: evita depender da posição de `actions/checkout` nos workflows do RustDesk e garante que todas as plataformas compilem a mesma árvore versionada.
+
+`libs/hbb_common` é tratado como submódulo upstream. Nenhum nome, servidor, relay ou chave FoxxDesk é escrito dentro dele.
+
+## Comando principal
 
 ```bash
 python3 scripts/foxxdesk_prepare.py --target . --apply --yes --sync-deps
-python3 scripts/foxxdesk_validate.py --target .
 ```
 
-O `prepare` executa, nesta ordem:
+Ordem da V6:
 
-1. lê e valida `.foxxdesk/foxxdesk.config.json`;
-2. migra apenas campos vazios de um `brand.json` legado, se ele ainda existir;
-3. instala/repara hooks do GitHub Actions;
-4. resolve e sincroniza a revisão compatível de `hbb_common`;
-5. reaplica o rebrand no perfil configurado;
-6. resolve o ícone mestre com fallback seguro por SHA-256;
-7. gera/confere os assets de Android, iOS, Windows, macOS e Linux;
-8. atualiza o cache do overlay e `icon-state.json`;
-9. executa o preflight.
+1. carrega/valida o JSON central;
+2. remove hooks FoxxDesk legados de workflows upstream;
+3. resolve a revisão correta do `hbb_common`;
+4. restaura branding legado dentro do submódulo, se reconhecido;
+5. aplica rebrand `runtime` com `--preserve-hbb-common`;
+6. aplica `src/foxxdesk_defaults.rs` e patches runtime no crate principal;
+7. gera/confere ícones e cache determinístico;
+8. executa a validação final.
 
-### Perfis
+## `brand`
 
-- `safe`: núcleo mínimo; útil para uma correção bem pequena.
-- `runtime`: **padrão recomendado para update e CI**. Reaplica o produto/build e exclui documentação/contribuição e arquivos de API/plataforma do `hbb_common`.
-- `full`: bootstrap inicial ou auditoria explícita de toda a allowlist.
+| Campo | Função | Recomendação |
+|---|---|---|
+| `display_name` | Nome público exibido ao usuário. | `FoxxDesk` |
+| `slug` | Identificador interno/pacote. | Mantenha `foxxdesk`. |
+| `company` | Empresa/copyright/metadados. | Personalizável. |
+| `maintainer_name` | Nome do mantenedor. | Opcional. |
+| `maintainer_email` | E-mail em metadados compatíveis. | Opcional. |
+| `homepage` | Site público do produto. | HTTPS recomendado. |
 
-Use full apenas intencionalmente:
+Alterar `slug` é uma operação mais invasiva. Por padrão `allow_internal_slug_change=false` impede mudanças acidentais.
 
-```bash
-python3 scripts/foxxdesk_prepare.py --target . --apply --yes --sync-deps --bootstrap
-```
+## `network`
 
-## Correção do erro `.foxxdesk/assets/icon.png` ausente no GitHub Actions
-
-O erro antigo:
-
-```text
-ERRO: Fonte ausente: .../.foxxdesk/assets/icon.png
-```
-
-não derruba mais o build imediatamente. O v2 possui uma recuperação segura:
-
-1. procura `icons.source`;
-2. se estiver ausente, testa `icons.fallback_sources`;
-3. o SHA-256 do fallback precisa corresponder ao `master_sha256` salvo em `.foxxdesk/icon-state.json`;
-4. somente então o arquivo mestre é recriado;
-5. se o hash for diferente, o prepare **falha** em vez de usar silenciosamente um ícone RustDesk errado.
-
-O composite action instala Pillow antes da preparação, então o CI pode regenerar os assets em vez de depender de snapshots binários antigos.
-
-### Garanta que o master esteja versionado
-
-O `.gitignore` contém exceções explícitas, mas confirme uma vez:
-
-```bash
-git check-ignore -v .foxxdesk/assets/icon.png || true
-git add .gitignore .gitattributes .foxxdesk scripts .github/actions/prepare-foxxdesk .github/workflows
-git ls-files .foxxdesk/assets/icon.png
-```
-
-O último comando deve imprimir:
-
-```text
-.foxxdesk/assets/icon.png
-```
-
-Se não imprimir, faça:
-
-```bash
-git add -f .foxxdesk/assets/icon.png .foxxdesk/icon-state.json
-```
-
-Depois commit/push.
-
-## `.foxxdesk/foxxdesk.config.json`
-
-### `brand`
-
-| Campo | Uso |
+| Campo | Função |
 |---|---|
-| `display_name` | Nome público do aplicativo. |
-| `slug` | Identificador interno. Mantenha `foxxdesk` salvo se você conscientemente habilitar `allow_internal_slug_change`. |
-| `company` | Empresa/copyright em superfícies compatíveis. |
-| `maintainer_name` | Nome do mantenedor. |
-| `maintainer_email` | E-mail de metadados/pacotes. |
-| `homepage` | URL pública. |
+| `server` | Rendezvous/ID server padrão compilado no FoxxDesk. |
+| `relay` | Relay padrão; se vazio, o loader herda `server`. |
+| `key` | Chave pública usada para validar a conexão com o servidor. |
 
-### `network`
+Na V6 estes defaults são materializados em `src/foxxdesk_defaults.rs`, não em `libs/hbb_common`.
 
-| Campo | Uso |
+## `icons`
+
+| Campo | Função |
 |---|---|
-| `server` | Rendezvous/ID server padrão. |
-| `relay` | Relay padrão. |
-| `key` | **Chave pública** do hbbs para o cliente customizado. Não coloque chave privada do servidor no cliente. |
+| `enabled` | Ativa o pipeline FoxxDesk de ícones. |
+| `source` | Fonte mestre. Padrão: `.foxxdesk/assets/icon.png`. |
+| `apply_on_prepare` | Confere/regenera ícones no prepare local. |
+| `discover_by_name` | Procura nomes conhecidos apenas em raízes de plataforma seguras. |
+| `create_brand_owned_assets` | Permite criar assets próprios FoxxDesk ausentes. |
+| `quality_profile` | `best`, `balanced` ou `fast`. |
+| `min_source_size` | Resolução mínima aceita. |
+| `recommended_source_size` | Resolução recomendada. |
+| `padding_ratio` | Margem transparente de 0 até <0,45. |
+| `ios_background` | Fundo ao remover transparência do AppIcon iOS. |
+| `png_compress_level` | Compressão PNG 0–9, sem perda visual. |
+| `png_optimize` | Ativa otimização PNG. |
+| `fallback_sources` | Fontes de recuperação permitidas. |
+| `auto_seed_missing_source` | Só recupera master ausente quando o hash esperado comprova identidade. |
 
-### `icons`
+No CI não há Pillow/renderização. O cache em `.foxxdesk/icon-overlay/` é conferido byte a byte/hash.
 
-| Campo | Padrão | Função |
-|---|---:|---|
-| `enabled` | `true` | Gerencia ícones. |
-| `source` | `.foxxdesk/assets/icon.png` | Fonte oficial. |
-| `fallback_sources` | `res/icon.png`, overlay | Recuperação se o master não chegar ao checkout. |
-| `auto_seed_missing_source` | `true` | Permite recuperar apenas fallback verificado. |
-| `apply_on_prepare` | `true` | Ícone é parte normal do prepare. |
-| `discover_by_name` | `true` | Descobre **somente** nomes conhecidos em raízes de plataforma seguras. |
-| `create_brand_owned_assets` | `true` | Pode criar assets exclusivos FoxxDesk. |
-| `quality_profile` | `best` | Lanczos + PNG lossless otimizado. |
-| `min_source_size` | `512` | Abaixo disso falha. |
-| `recommended_source_size` | `1024` | Recomendação. A fonte atual 1024×1024 atende. |
-| `padding_ratio` | `0.0` | Padding transparente sem recorte. |
-| `ios_background` | `#FFFFFF` | Fundo para AppIcon RGB sem alpha. |
-| `png_compress_level` | `9` | Compressão lossless. |
-| `png_optimize` | `true` | Otimização sem perda. |
+## `rebrand`
 
-O gerador nunca toca `res/logo-header.svg` e `res/design.svg`. SVG existente preserva `width`, `height` e `viewBox`; apenas o payload visual é atualizado.
+| Campo | Função |
+|---|---|
+| `profile` | Perfil normal. V6 recomenda `runtime`. |
+| `ci_profile` | Mantido para compatibilidade; CI V6 é somente leitura. |
+| `bootstrap_profile` | Perfil usado por `--bootstrap`, normalmente `full`. |
+| `scan_all` | Varredura ampla. Deixe `false` em updates normais. |
+| `remove_old_renamed` | Remove originais após cópias/renomes. Deixe `false` por segurança. |
+| `patch_only` | Política de patch textual/cirúrgico. |
+| `replace_whole_source_files` | Deve permanecer `false`. |
+| `protect_upstream_names` | Preserva identificadores upstream quando necessário à compatibilidade. |
+| `allow_internal_slug_change` | Libera mudança invasiva do slug. |
 
-### Descoberta segura por nome
+Perfis:
 
-A descoberta não procura todo `*.png` do projeto. Ela é limitada a raízes conhecidas (`res`, Fastlane metadata, Android `res`, iOS AppIcon e recursos Windows) e nomes de aplicativo como `ic_launcher.png`, `ic_stat_logo.png`, `app_icon.png` e `icon.png` em contextos permitidos.
+- `safe`: núcleo mínimo;
+- `runtime`: produto/build, padrão de atualização;
+- `full`: bootstrap/auditoria intencional.
 
-### `rebrand`
+Mesmo no `full`, quando iniciado pelo `foxxdesk_prepare.py`, `hbb_common` é preservado.
 
-```json
-{
-  "profile": "runtime",
-  "ci_profile": "runtime",
-  "bootstrap_profile": "full",
-  "scan_all": false,
-  "remove_old_renamed": false,
-  "patch_only": true,
-  "replace_whole_source_files": false,
-  "protect_upstream_names": true,
-  "allow_internal_slug_change": false
-}
-```
+## `upstream`
 
-`patch_only=true` e `replace_whole_source_files=false` são invariantes de segurança.
+| Campo | Função |
+|---|---|
+| `rustdesk_ref` | `auto` ou uma ref explícita do RustDesk. |
+| `sync_hbb_common` | Habilita conferência/sincronização local. |
+| `hbb_common_pins` | Mapa `versão RustDesk -> SHA hbb_common`. |
 
-### `upstream`
+Para versão conhecida, o pin é determinístico. Para versão nova, o helper tenta resolver o gitlink da mesma ref/versão do RustDesk e persiste o SHA. Ele nunca segue `hbb_common/main` isoladamente.
 
-`hbb_common_pins` registra `versão RustDesk -> commit hbb_common`. Para RustDesk 1.4.9:
+## `build`
 
-```text
-7e1c392c62d39c364127307cd408421dd5f8cfb0
-```
+O wrapper `scripts/foxxdesk_build.py` converte apenas opções que o `build.py` instalado suporta no contexto atual.
 
-Comando manual:
+Campos principais:
 
-```bash
-python3 scripts/foxxdesk_sync_hbb_common.py --target . --force --write-pin
-```
+- `flutter`
+- `portable` (Windows)
+- `hwcodec`
+- `vram` (Windows)
+- `unix_file_copy_paste` (Linux/macOS)
+- `screencapturekit` (macOS)
+- `skip_cargo`
+- `skip_portable_pack` (Windows)
+- `package`
+- `resource_features`
+- `cargo_features` (reservado/configurável; não é habilitado cegamente)
 
-## Ícones
-
-Rodar diretamente:
-
-```bash
-python3 scripts/apply_foxxdesk_icon.py \
-  --target . \
-  --source .foxxdesk/assets/icon.png \
-  --quality-profile best \
-  --discover-by-name \
-  --create-brand-owned-assets \
-  --png-compress-level 9 \
-  --apply --yes
-```
-
-Normalmente não é necessário: `foxxdesk_prepare.py` já faz isso.
-
-## Build local
-
-Mostrar o comando resolvido:
+Ver comando sem compilar:
 
 ```bash
 python3 scripts/foxxdesk_build.py --target . --dry-run
 ```
 
-Preparar e compilar:
+Preparar e compilar localmente:
 
 ```bash
 python3 scripts/foxxdesk_build.py --target . --prepare
 ```
 
-O wrapper somente traduz opções que o `build.py` suporta na plataforma atual, como `--flutter`, `--hwcodec`, `--vram` (Windows), `--portable` (Windows), `--unix-file-copy-paste`, `--screencapturekit` (macOS), `--skip-cargo`, `--skip-portable-pack` (Windows) e `--package`.
+## `github_actions`
 
-## GitHub Actions
+Configuração V6 esperada:
 
-O composite action `.github/actions/prepare-foxxdesk/action.yml`:
+```json
+{
+  "enabled": true,
+  "validate_before_build": true,
+  "install_icon_dependencies": false,
+  "deterministic_icon_cache_in_ci": true,
+  "manual_build_only": true,
+  "ci_mutates_source": false,
+  "require_prepared_commit": true,
+  "inject_prepare_hooks_into_upstream_workflows": false
+}
+```
 
-1. instala `Pillow>=10,<13`;
-2. executa `foxxdesk_prepare.py --ci`;
-3. usa `rebrand.ci_profile` (`runtime` por padrão);
-4. sincroniza `hbb_common` exatamente;
-5. regenera ícones do master/fallback verificado;
-6. valida antes do build.
+O workflow `.github/workflows/foxxdesk-build.yml` deve ter somente `workflow_dispatch` como gatilho FoxxDesk.
 
-O workflow `FoxxDesk Build` executa preflight em push/PR. A matriz completa é disparada manualmente com `workflow_dispatch`.
+O composite `.github/actions/prepare-foxxdesk/action.yml` executa **somente validação**:
 
-## Argumentos principais do prepare
+```bash
+python scripts/foxxdesk_validate.py --target . --ci
+```
+
+## `safety`
+
+| Campo | Função |
+|---|---|
+| `fail_on_missing_required_files` | Falha quando componente necessário desapareceu. |
+| `fail_on_incompatible_hbb_common` | Bloqueia dependência incompatível. |
+| `backup_before_patch` | Mantém backups nas rotinas legadas aplicáveis. |
+| `require_nonempty_server` | Impede build sem server. |
+| `require_nonempty_key` | Impede build sem chave pública. |
+| `allow_unverified_icon_fallback` | Deve permanecer `false`; evita usar logo errada. |
+
+## Argumentos do `foxxdesk_prepare.py`
+
+| Argumento | Uso |
+|---|---|
+| `--target PATH` | Raiz do projeto. |
+| `--apply` | Aplica mudanças locais. |
+| `--dry-run` | Mostra mudanças sem aplicar. |
+| `--yes` | Compatibilidade com fluxo não interativo. |
+| `--ci` | **Somente leitura**: valida a árvore commitada. |
+| `--bootstrap` | Usa o perfil de bootstrap/full. |
+| `--sync-deps` | Confere/sincroniza `hbb_common` quando necessário. |
+| `--force-sync-deps` | Força restaurar a revisão esperada; use apenas conscientemente. |
+| `--profile safe|runtime|full` | Sobrescreve perfil da execução. |
+| `--regenerate-icons` | Compatibilidade; o prepare já confere os ícones. |
+| `--skip-icons` | Não trata ícones nesta execução. |
+| `--skip-validate` | Pula validação final; não recomendado. |
+
+## Argumentos de `foxxdesk_sync_hbb_common.py`
 
 ```text
 --target PATH
---apply
---dry-run
---ci
---bootstrap
---sync-deps
---force-sync-deps
---profile safe|runtime|full
---regenerate-icons      compatibilidade; geração já é automática
---skip-icons            opt-out explícito
---skip-validate
+--force
+--check
+--write-pin
 ```
 
-## Checklist antes do push
+Se um submódulo real possuir alteração local desconhecida, o modo normal **não descarta** essa alteração. Revise primeiro:
 
 ```bash
-python3 -m py_compile scripts/*.py
-python3 scripts/foxxdesk_prepare.py --target . --apply --yes --sync-deps
-python3 scripts/foxxdesk_validate.py --target .
-git status --short
-git ls-files .foxxdesk/assets/icon.png
-git add .
-git commit -m "chore: prepare FoxxDesk update"
-git push
+git -C libs/hbb_common status --short
+git -C libs/hbb_common diff
 ```
 
-Se o segundo `prepare` na mesma árvore ainda alterar dezenas de arquivos, pare e revise o relatório. Em estado estável, a execução seguinte deve ser essencialmente idempotente: rebrand `0` e ícones `0` quando nada mudou.
+## `foxxdesk_runtime_defaults.py`
 
-## Resilience V4 (2026-09-05)
+Uso interno recomendado:
 
-- CI usa overlay de ícones autenticado e não instala Pillow no runner.
-- Windows não valida `chmod +x` via filesystem; Ubuntu preflight valida os modos POSIX.
-- `FoxxDesk Build` é somente manual.
-- `.gitignore` da raiz é protegido e nunca é alterado.
-- Hooks são reparados localmente; CI apenas verifica se foram commitados.
+```bash
+python3 scripts/foxxdesk_runtime_defaults.py --target . --apply
+python3 scripts/foxxdesk_runtime_defaults.py --target . --check
+```
 
+Patches V6 são marker-based e idempotentes. Se um anchor upstream desaparecer, o helper termina com erro específico.
+
+## `apply_foxxdesk_rebrand.py`
+
+É o engine de rebrand de baixo nível. Prefira chamar `foxxdesk_prepare.py`.
+
+Flags especialmente importantes para V6:
+
+- `--profile runtime`
+- `--icons-managed-externally`
+- `--preserve-hbb-common`
+- `--skip-hbb-common-download`
+
+O prepare define essas políticas automaticamente.
+
+## `apply_foxxdesk_icon.py`
+
+Opções úteis:
+
+- `--source`
+- `--ios-background`
+- `--discover-by-name`
+- `--create-brand-owned-assets`
+- `--quality-profile best|balanced|fast`
+- `--padding-ratio`
+- `--png-compress-level`
+- `--min-source-size`
+- `--recommended-source-size`
+- `--no-png-optimize`
+
+Troque somente `.foxxdesk/assets/icon.png` e rode o prepare; não edite manualmente dezenas de derivados.
+
+## Checklist antes do commit
+
+```bash
+python3 scripts/foxxdesk_prepare.py --target . --apply --yes --sync-deps
+python3 scripts/foxxdesk_validate.py --target .
+git diff -- .gitignore .gitattributes
+git -C libs/hbb_common status --short
+git status --short
+```
+
+Esperado:
+
+- validação OK;
+- `.gitignore`/`.gitattributes` sem mudanças do FoxxDesk;
+- `hbb_common` worktree limpa;
+- segunda execução do prepare com 0 alterações relevantes.

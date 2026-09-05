@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "FoxxDesk configuration v2",
+  "title": "FoxxDesk configuration v6 — submodule-safe, read-only CI",
   "type": "object",
   "required": [
     "brand",
@@ -15,7 +15,8 @@
   "properties": {
     "version": {
       "type": "integer",
-      "minimum": 4
+      "minimum": 6,
+      "description": "Versão do formato FoxxDesk. V6 mantém hbb_common upstream/limpo e usa CI somente leitura."
     },
     "brand": {
       "type": "object",
@@ -214,11 +215,11 @@
       "properties": {
         "manual_build_only": {
           "type": "boolean",
-          "description": "FoxxDesk Build deve usar apenas workflow_dispatch."
+          "description": "FoxxDesk Build usa somente workflow_dispatch."
         },
         "prepare_only_manual_build_path": {
           "type": "boolean",
-          "description": "Não injeta prepare nos workflows upstream de push/PR."
+          "description": "Legado V3/V4. V5 não injeta prepare em workflows upstream."
         },
         "install_icon_dependencies": {
           "type": "boolean",
@@ -227,6 +228,19 @@
         "deterministic_icon_cache_in_ci": {
           "type": "boolean",
           "description": "Restaura overlay autenticado por SHA-256 no CI em vez de regenerar imagens por SO."
+        },
+        "ci_mutates_source": {
+          "type": "boolean",
+          "description": "Deve permanecer false na V5. GitHub Actions apenas valida a árvore commitada."
+        },
+        "require_prepared_commit": {
+          "type": "boolean",
+          "description": "Exige que rebrand, hbb_common e assets tenham sido preparados e commitados antes do build."
+        },
+        "inject_prepare_hooks_into_upstream_workflows": {
+          "type": "boolean",
+          "const": false,
+          "description": "V6 não injeta hooks em workflows upstream; o source deve ser preparado e commitado antes do build."
         }
       }
     },

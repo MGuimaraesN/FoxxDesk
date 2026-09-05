@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-SCRIPT_VERSION = "foxxdesk-hbb-sync-v2-atomic-same-volume-2026-09-05"
+SCRIPT_VERSION = "foxxdesk-hbb-sync-v3-clean-submodule-2026-09-05"
 HBB_URL = "https://github.com/rustdesk/hbb_common.git"
 CONFIG_REL = Path(".foxxdesk/foxxdesk.config.json")
 HBB_REL = Path("libs/hbb_common")
@@ -109,6 +109,41 @@ def source_requirements(root: Path) -> list[str]:
         required.append("aligned_u8_vec_returns_vec")
     return required
 
+
+def has_legacy_foxxdesk_modifications(root: Path) -> bool:
+    """Detect old FoxxDesk branding written directly into the hbb_common submodule.
+
+    V6 keeps the submodule pristine. These markers are safe to treat as legacy
+    because upstream hbb_common does not define FoxxDesk-specific defaults.
+    """
+    config = root / HBB_REL / "src/config.rs"
+    if not config.is_file():
+        return False
+    text = config.read_text(encoding="utf-8", errors="ignore")
+    markers = [
+        "DEFAULT_RENDEZVOUS_SERVER",
+        "DEFAULT_RELAY_SERVER",
+        "DEFAULT_CUSTOM_CLIENT_KEY",
+        'RwLock::new("FoxxDesk".to_owned())',
+        'RwLock::new("foxxdesk".to_owned())',
+    ]
+    return any(marker in text for marker in markers)
+
+
+
+
+def submodule_worktree_dirty(root: Path) -> bool:
+    """Return True when the real hbb_common submodule has local worktree changes."""
+    if not gitlink_commit(root):
+        return False
+    hbb = root / HBB_REL
+    if not hbb.is_dir():
+        return False
+    try:
+        cp = run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=hbb, capture=True)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+    return bool(cp.stdout.strip())
 
 def compatibility_errors(root: Path) -> list[str]:
     hbb = root / HBB_REL
@@ -300,10 +335,25 @@ def synchronize(root: Path, *, force: bool = False, check_only: bool = False) ->
             raise SyncError("; ".join(compat_before))
         return False, expected
 
-    if not force and not compat_before and (current in {None, expected}):
+    real_submodule = bool(gitlink_commit(root))
+    legacy_dirty = real_submodule and has_legacy_foxxdesk_modifications(root)
+    worktree_dirty = real_submodule and submodule_worktree_dirty(root)
+
+    # Known legacy FoxxDesk edits are safe to clean automatically. Unknown local
+    # edits are never discarded implicitly: fail early and let the user inspect them.
+    if worktree_dirty and not legacy_dirty and not force:
+        raise SyncError(
+            "libs/hbb_common contém alterações locais não reconhecidas. "
+            "A V6 não sobrescreve essas mudanças automaticamente; revise `git -C libs/hbb_common status --short` "
+            "ou use --force-sync-deps somente se quiser descartá-las."
+        )
+
+    if not force and not compat_before and (current in {None, expected}) and not legacy_dirty and not worktree_dirty:
         # A copied upstream tree may not have .git/marker; if its API matches the source,
         # do not require network just to prove provenance during a local preparation.
         return False, expected
+    if legacy_dirty:
+        print("[hbb] removendo alterações FoxxDesk legadas do submódulo; defaults agora ficam no crate principal")
 
     print(f"[hbb] sincronizando revisão {expected} ({source})")
     if gitlink_commit(root):

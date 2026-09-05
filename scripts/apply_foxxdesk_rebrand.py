@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCRIPT_VERSION = "v38-cross-platform-ci-safe-2026-09-05"
+SCRIPT_VERSION = "v39-submodule-safe-runtime-defaults-2026-09-05"
 APP_DISPLAY_NAME = "FoxxDesk"
 APP_SLUG = "foxxdesk"
 APP_SLUG_UPPER = "FOXXDESK"
@@ -405,6 +405,13 @@ GENERATED_HELPER_FILES: set[str] = {
     "scripts/fix_generated_bridge_compat.py",
     "scripts/fix_foxxdesk_windows_flutter_build.py",
     "scripts/apply_foxxdesk_icon.py",
+    "scripts/foxxdesk_runtime_defaults.py",
+    "scripts/foxxdesk_prepare.py",
+    "scripts/foxxdesk_validate.py",
+    "scripts/foxxdesk_sync_hbb_common.py",
+    "scripts/foxxdesk_ci_hooks.py",
+    "scripts/foxxdesk_config.py",
+    "scripts/foxxdesk_build.py",
 }
 
 # User/upstream control files that the rebrand must never rewrite.
@@ -1577,6 +1584,9 @@ def apply_file_renames(target: Path, args: argparse.Namespace, report: Dict[str,
 def process_one_file(target: Path, rel: str, args: argparse.Namespace, report: Dict[str, Any], backup_root: Optional[Path]) -> None:
     if rel in NEVER_PATCH_FILES:
         report["ignored_files"].append(rel + " (protegido; nunca alterado pelo rebrand)")
+        return
+    if getattr(args, "preserve_hbb_common", False) and rel.startswith("libs/hbb_common/"):
+        report["ignored_files"].append(rel + " (submódulo upstream preservado; defaults FoxxDesk ficam no crate principal)")
         return
     if is_skipped_path(rel):
         report["ignored_files"].append(rel)
@@ -3035,7 +3045,7 @@ def run_icon_assets_v28(target: Path, args: argparse.Namespace, report: Dict[str
         logging.warning("Icon assets stderr:\n%s", completed.stderr.strip())
 
     if completed.returncode != 0:
-        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v36.log"})
+        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v39.log"})
         return
 
     changed_match = re.search(r"arquivos alterados:\s*(\d+)", completed.stdout or "")
@@ -3246,8 +3256,8 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
 
 
 def setup_logging_v28(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:  # type: ignore[override]
-    """V36: mantém flags de logging e usa rebrand_v36.log por padrão."""
-    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v36.log"
+    """V36: mantém flags de logging e usa rebrand_v39.log por padrão."""
+    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v39.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     level = logging.DEBUG if getattr(args, "verbose", False) else logging.INFO
     root_logger = logging.getLogger()
@@ -3925,15 +3935,15 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
     ]
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V38 patch-only, cross-platform e upstream-safe.")
+    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V39 patch-only, cross-platform e submodule-safe.")
     p.add_argument("--target", default="./", help="Pasta raiz do projeto alvo. Padrão: ./")
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="Mostra o que seria alterado sem salvar arquivos do projeto, exceto relatório.")
     mode.add_argument("--apply", action="store_true", help="Aplica as alterações.")
     p.add_argument("--yes", action="store_true", help="Confirma automaticamente o modo --apply.")
-    p.add_argument("--server", default=None, help="Domínio/IP do servidor FoxxDesk. Se omitido, usa o DEFAULT_SERVER embutido na v23 e grava defaults ocultos em config.rs.")
-    p.add_argument("--relay", default=None, help="Domínio/IP do relay FoxxDesk. Se omitido, usa o mesmo valor do server e grava em config.rs/workflow.")
-    p.add_argument("--key", default=None, help="Chave pública do hbbs. Se omitida, usa DEFAULT_KEY e grava em config.rs/workflow.")
+    p.add_argument("--server", default=None, help="Domínio/IP do servidor FoxxDesk. No fluxo recomendado este valor vem de .foxxdesk/foxxdesk.config.json; não grava branding em hbb_common.")
+    p.add_argument("--relay", default=None, help="Domínio/IP do relay FoxxDesk. No fluxo recomendado vem do JSON central; o default runtime fica no crate principal.")
+    p.add_argument("--key", default=None, help="Chave pública do hbbs. No fluxo recomendado vem do JSON central; não é gravada em hbb_common.")
     p.add_argument("--display-name", default=None, help="Nome público do aplicativo. Padrão: FoxxDesk")
     p.add_argument("--slug", default=None, help="Slug interno/pacote. Altere somente se souber que todos os identificadores internos são compatíveis.")
     p.add_argument("--company", default=None, help="Empresa/detentora do copyright e metadados.")
@@ -3950,7 +3960,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--icon-ios-background", default="#FFFFFF", help="Fundo usado para achatar ícones iOS/RGB. Padrão: #FFFFFF")
     p.add_argument("--icon-update-ios-contents", action="store_true", help="Também normaliza flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json")
     p.add_argument("--icons-managed-externally", action="store_true", help="Ícones são tratados pelo foxxdesk_prepare.py; suprime o pipeline legado interno.")
-    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v36.log")
+    p.add_argument("--preserve-hbb-common", action="store_true", help="Não altera nenhum arquivo dentro de libs/hbb_common; use com foxxdesk_runtime_defaults.py para CI/submódulo seguro.")
+    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v39.log")
     p.add_argument("--verbose", action="store_true", help="Ativa logging DEBUG no arquivo/console.")
     p.add_argument("--quiet", action="store_true", help="Não imprime logs no console; mantém log em arquivo.")
     return p.parse_args()
@@ -4040,6 +4051,16 @@ def main() -> int:
 
     logging.info("Etapa: validação final de segurança/build")
     validate_build_safety(target, report)
+    if getattr(args, "preserve_hbb_common", False):
+        # V6 keeps hbb_common exactly upstream. Legacy V23 validation refers to an
+        # old FoxxDesk patch inside the submodule and must not reject pristine upstream.
+        report["pending"] = [
+            item for item in report["pending"]
+            if not (
+                item.get("file") == "libs/hbb_common/src/config.rs"
+                and str(item.get("message", "")).startswith("V23:")
+            )
+        ]
 
     report_md = build_report(report, args, target)
     report_path = target / "rebrand_report.md"

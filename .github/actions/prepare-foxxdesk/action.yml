@@ -1,9 +1,9 @@
-name: Prepare FoxxDesk source
-description: Validate compatible hbb_common, apply safe brand patches and restore deterministic FoxxDesk icon assets
+name: Validate FoxxDesk source
+description: Validate the committed FoxxDesk brand, icon cache and compatible hbb_common without mutating upstream workflows or source
 runs:
   using: composite
   steps:
-    - name: Prepare brand, icons and compatible dependency
+    - name: Validate committed FoxxDesk source
       shell: bash
       run: |
         set -euo pipefail
@@ -12,4 +12,4 @@ runs:
         else
           PYTHON_BIN=python
         fi
-        "$PYTHON_BIN" scripts/foxxdesk_prepare.py --target . --ci --apply --yes
+        "$PYTHON_BIN" scripts/foxxdesk_validate.py --target . --ci

@@ -1,15 +1,16 @@
-# `.foxxdesk` — fonte persistente do FoxxDesk
+# `.foxxdesk` — fonte persistente do FoxxDesk V6
 
-Esta pasta deve sobreviver às atualizações do RustDesk e ser versionada no Git.
+Esta pasta pertence ao FoxxDesk, deve sobreviver às atualizações do RustDesk e deve ser versionada no Git.
 
-- `foxxdesk.config.json`: **única configuração editável** do FoxxDesk.
-- `foxxdesk.config.schema.json`: schema para validação/autocomplete.
+- `foxxdesk.config.json`: única configuração editável.
+- `foxxdesk.config.schema.json`: schema de validação/autocomplete.
 - `assets/icon.png`: ícone mestre oficial.
-- `icon-state.json`: SHA-256 do master e parâmetros usados; valida fallback seguro no CI.
-- `icon-overlay/`: cache dos assets gerados. É fallback/cache, não fonte principal.
-- `icon-overlay-manifest.json`: lista do cache.
+- `icon-state.json`: hash e parâmetros do master.
+- `icon-overlay/`: cache determinístico dos assets gerados.
+- `icon-overlay-manifest.json`: manifesto do cache.
+- `.gitignore`: regras locais apenas desta pasta; não altera o `.gitignore` upstream.
 
-O antigo `brand.json` não é mais necessário.
+O antigo `brand.json` não é necessário.
 
 Atualização normal:
 
@@ -18,4 +19,6 @@ python3 scripts/foxxdesk_prepare.py --target . --apply --yes --sync-deps
 python3 scripts/foxxdesk_validate.py --target .
 ```
 
-O perfil padrão é `runtime`. Use `--bootstrap` somente para primeira conversão/auditoria completa.
+Na V6, `libs/hbb_common` permanece upstream/limpo. Os defaults de nome/server/relay/key ficam no crate principal via `src/foxxdesk_defaults.rs`.
+
+O CI é somente leitura e o build é manual.
