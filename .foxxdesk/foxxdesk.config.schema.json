@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "FoxxDesk configuration v6 — submodule-safe, read-only CI",
+  "title": "FoxxDesk configuration v8 — optional brand assets, submodule-safe CI",
   "type": "object",
   "required": [
     "brand",
@@ -15,8 +15,8 @@
   "properties": {
     "version": {
       "type": "integer",
-      "minimum": 7,
-      "description": "Versão do formato FoxxDesk. V6 mantém hbb_common upstream/limpo e usa CI somente leitura."
+      "minimum": 8,
+      "description": "Versão do formato FoxxDesk. V8 separa assets obrigatórios de build de assets opcionais de marca e mantém hbb_common upstream/limpo."
     },
     "brand": {
       "type": "object",
@@ -101,7 +101,8 @@
           "type": "boolean"
         },
         "create_brand_owned_assets": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Gera assets extras de conveniência (res/FoxxDesk.png, res/FoxxDesk.svg, res/foxxdesk-banner.svg). Eles são opcionais para o build e o CI não exige que estejam presentes no checkout."
         },
         "quality_profile": {
           "enum": [

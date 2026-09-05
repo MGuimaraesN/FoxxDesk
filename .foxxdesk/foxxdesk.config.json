@@ -30,7 +30,7 @@
       ".foxxdesk/icon-overlay/res/icon.png"
     ],
     "auto_seed_missing_source": true,
-    "create_brand_owned_assets": true,
+    "create_brand_owned_assets": false,
     "update_ios_contents": false
   },
   "rebrand": {
@@ -73,7 +73,7 @@
     "require_nonempty_key": true,
     "allow_unverified_icon_fallback": false
   },
-  "version": 7,
+  "version": 8,
   "upstream": {
     "rustdesk_ref": "auto",
     "sync_hbb_common": true,

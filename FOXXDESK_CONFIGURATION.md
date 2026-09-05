@@ -285,3 +285,12 @@ Esperado:
 - `.gitignore`/`.gitattributes` sem mudanças do FoxxDesk;
 - `hbb_common` worktree limpa;
 - segunda execução do prepare com 0 alterações relevantes.
+
+
+## V8 — assets obrigatórios x opcionais
+
+O cache de ícones agora separa `files` (obrigatórios para compilar) de `optional_files` (assets de conveniência da marca). `res/FoxxDesk.png`, `res/FoxxDesk.svg` e `res/foxxdesk-banner.svg` são opcionais: podem ser gerados localmente, mas a ausência deles no checkout do GitHub não bloqueia o build. Se estiverem presentes, continuam sendo validados contra o cache. O `.gitignore` da raiz não é modificado.
+
+Por padrão, `icons.create_brand_owned_assets=false`; ative somente se quiser gerar esses três assets extras de apresentação.
+
+`Contents.json` do AppIcon iOS só entra no cache obrigatório quando `icons.update_ios_contents=true`; com `false`, o arquivo fica sob controle do upstream e não causa falso positivo em atualizações.

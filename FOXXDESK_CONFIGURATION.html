@@ -123,6 +123,17 @@ git push</pre>
 <p>Depois: <strong>GitHub → Actions → FoxxDesk Build → Run workflow</strong>.</p>
 <div class="callout warning">Se o preflight CI falhar, corrija localmente e faça novo commit. O runner não modifica o source por design.</div>
 </section>
+
+<section id="v8-assets-opcionais" class="section">
+  <h2>V8 · Assets obrigatórios x opcionais</h2>
+  <p>O preflight separa os assets realmente usados pela compilação dos arquivos extras de apresentação da marca.</p>
+  <div class="grid">
+    <div class="card"><h3>Obrigatórios</h3><p>Ícones Windows, macOS, Android, iOS, Flutter, Linux e Fastlane presentes em <code>files</code>. Se algum faltar ou divergir do cache, o CI falha.</p></div>
+    <div class="card"><h3>Opcionais</h3><p><code>res/FoxxDesk.png</code>, <code>res/FoxxDesk.svg</code> e <code>res/foxxdesk-banner.svg</code>. A ausência deles no checkout não bloqueia o build. Por padrão <code>create_brand_owned_assets=false</code>.</p></div>
+  </div>
+  <p>O <code>.gitignore</code> da raiz continua intocado.</p>
+</section>
+
 </main>
 </div>
 <footer class="footer">FoxxDesk Resilience V7 · documentação standalone · 2026-09-05</footer>

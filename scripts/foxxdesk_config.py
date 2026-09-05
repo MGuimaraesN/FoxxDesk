@@ -14,11 +14,16 @@ from pathlib import Path
 from typing import Any
 
 CONFIG_REL = Path('.foxxdesk/foxxdesk.config.json')
+OPTIONAL_BRAND_ASSETS = frozenset({
+    'res/FoxxDesk.png',
+    'res/FoxxDesk.svg',
+    'res/foxxdesk-banner.svg',
+})
 LEGACY_REL = Path('.foxxdesk/brand.json')
 SCHEMA_REL = Path('.foxxdesk/foxxdesk.config.schema.json')
 
 DEFAULTS: dict[str, Any] = {
-    'version': 7,
+    'version': 8,
     'brand': {
         'display_name': 'FoxxDesk',
         'slug': 'foxxdesk',
@@ -39,7 +44,7 @@ DEFAULTS: dict[str, Any] = {
         'auto_seed_missing_source': True,
         'apply_on_prepare': True,
         'discover_by_name': True,
-        'create_brand_owned_assets': True,
+        'create_brand_owned_assets': False,
         'quality_profile': 'best',
         'min_source_size': 512,
         'recommended_source_size': 1024,

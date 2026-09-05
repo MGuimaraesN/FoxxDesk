@@ -22,3 +22,7 @@ python3 scripts/foxxdesk_validate.py --target .
 Na V6, `libs/hbb_common` permanece upstream/limpo. Os defaults de nome/server/relay/key ficam no crate principal via `src/foxxdesk_defaults.rs`.
 
 O CI é somente leitura e o build é manual.
+
+## V8 — assets opcionais de marca
+
+`res/FoxxDesk.png`, `res/FoxxDesk.svg` e `res/foxxdesk-banner.svg` são conveniências de branding. O prepare pode gerá-los e armazená-los no overlay, mas o CI não os exige porque não são dependências do build e podem ser ignorados pelas regras upstream. O `.gitignore` da raiz não é alterado.

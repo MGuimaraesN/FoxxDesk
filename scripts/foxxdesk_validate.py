@@ -16,9 +16,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-SCRIPT_VERSION = 'foxxdesk-validate-v7-public-brand-semantic-2026-09-05'
+SCRIPT_VERSION = 'foxxdesk-validate-v8-optional-brand-assets-2026-09-05'
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from foxxdesk_config import CONFIG_REL, load_config  # noqa: E402
+from foxxdesk_config import CONFIG_REL, OPTIONAL_BRAND_ASSETS, load_config  # noqa: E402
 from foxxdesk_public_brand import desired_errors as public_brand_errors  # noqa: E402
 
 
@@ -99,7 +99,7 @@ def validate_public_brand(root: Path, display: str) -> tuple[list[str], list[str
     return public_brand_errors(root, display), []
 
 
-def validate_icon_cache(root: Path, source: Path, *, strict: bool) -> tuple[list[str], list[str]]:
+def validate_icon_cache(root: Path, source: Path, *, strict: bool, update_ios_contents: bool = False) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     state_path = root / '.foxxdesk/icon-state.json'
@@ -127,11 +127,25 @@ def validate_icon_cache(root: Path, source: Path, *, strict: bool) -> tuple[list
     try:
         manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
         files = manifest.get('files', [])
+        optional_files = manifest.get('optional_files', [])
         if not isinstance(files, list) or not files:
-            errors.append('icon-overlay-manifest.json não contém lista de assets')
+            errors.append('icon-overlay-manifest.json não contém lista de assets obrigatórios')
             return errors, warnings
+        if not isinstance(optional_files, list):
+            optional_files = []
+
+        # Backward compatibility: manifests V1/V2 sometimes put FoxxDesk-only
+        # convenience assets in the required list. They are not referenced by
+        # the build and may be ignored by the upstream root .gitignore, so V8
+        # reclassifies them as optional without touching .gitignore.
+        dynamic_optional = set(OPTIONAL_BRAND_ASSETS)
+        if not update_ios_contents:
+            dynamic_optional.add('flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json')
+        required = [rel for rel in files if rel not in dynamic_optional]
+        optional = list(dict.fromkeys(list(optional_files) + [rel for rel in files if rel in dynamic_optional]))
+
         mismatches: list[str] = []
-        for rel in files:
+        for rel in required:
             if not isinstance(rel, str) or not rel:
                 continue
             cached = overlay_root / rel
@@ -139,13 +153,31 @@ def validate_icon_cache(root: Path, source: Path, *, strict: bool) -> tuple[list
             if not cached.is_file():
                 mismatches.append(f'{rel} (cache ausente)')
             elif not actual.is_file():
-                mismatches.append(f'{rel} (asset ausente)')
+                mismatches.append(f'{rel} (asset obrigatório ausente)')
             elif not same_file(cached, actual):
                 mismatches.append(f'{rel} (asset != cache)')
+
+        optional_mismatches: list[str] = []
+        for rel in optional:
+            if not isinstance(rel, str) or not rel:
+                continue
+            cached = overlay_root / rel
+            actual = root / rel
+            # Missing optional asset in checkout is explicitly allowed. If the
+            # asset is tracked/present, it must still match the deterministic cache.
+            if actual.is_file() and not cached.is_file():
+                optional_mismatches.append(f'{rel} (presente, cache ausente)')
+            elif actual.is_file() and cached.is_file() and not same_file(cached, actual):
+                optional_mismatches.append(f'{rel} (asset opcional != cache)')
+
         if mismatches:
             preview = ', '.join(mismatches[:8])
             extra = f' (+{len(mismatches)-8})' if len(mismatches) > 8 else ''
             errors.append(f'cache determinístico de ícones divergente: {preview}{extra}; rode foxxdesk_prepare.py e faça commit')
+        if optional_mismatches:
+            preview = ', '.join(optional_mismatches[:8])
+            extra = f' (+{len(optional_mismatches)-8})' if len(optional_mismatches) > 8 else ''
+            errors.append(f'assets opcionais presentes divergem do cache: {preview}{extra}')
     except Exception as exc:
         errors.append(f'icon-overlay-manifest.json inválido: {exc}')
 
@@ -219,7 +251,10 @@ def main() -> int:
             res_icon = root / 'res/icon.png'
             if not same_file(source, res_icon):
                 errors.append('res/icon.png não corresponde ao ícone mestre configurado')
-            icon_errors, icon_warnings = validate_icon_cache(root, source, strict=args.ci)
+            icon_errors, icon_warnings = validate_icon_cache(
+                root, source, strict=args.ci,
+                update_ios_contents=bool(icons.get('update_ios_contents', False)),
+            )
             errors.extend(icon_errors)
             warnings.extend(icon_warnings)
 

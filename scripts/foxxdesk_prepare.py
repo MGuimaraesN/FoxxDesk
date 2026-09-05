@@ -23,12 +23,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-SCRIPT_VERSION = "foxxdesk-prepare-v7-public-brand-semantic-2026-09-05"
+SCRIPT_VERSION = "foxxdesk-prepare-v8-optional-brand-assets-2026-09-05"
 STATE_REL = Path('.foxxdesk/icon-state.json')
 OVERLAY_MANIFEST_REL = Path('.foxxdesk/icon-overlay-manifest.json')
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from foxxdesk_config import CONFIG_REL, load_config  # noqa: E402
+from foxxdesk_config import CONFIG_REL, OPTIONAL_BRAND_ASSETS, load_config  # noqa: E402
 
 
 def sha256(path: Path) -> str:
@@ -114,7 +114,8 @@ def restore_overlay_cache(root: Path, master: Path) -> int:
         raise RuntimeError("Pillow não está disponível e o cache .foxxdesk/icon-overlay não existe")
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
     changed = 0
-    for rel in manifest.get('files', []):
+    restore_files = list(manifest.get('files', [])) + list(manifest.get('optional_files', []))
+    for rel in restore_files:
         rel_path = Path(rel)
         src = root / '.foxxdesk/icon-overlay' / rel_path
         dst = root / rel_path
@@ -125,7 +126,7 @@ def restore_overlay_cache(root: Path, master: Path) -> int:
     return changed
 
 
-def generator_target_paths(generator: Path) -> list[str]:
+def generator_target_paths(generator: Path, *, include_ios_contents: bool = False) -> list[str]:
     spec = importlib.util.spec_from_file_location('foxxdesk_icon_generator', generator)
     if not spec or not spec.loader:
         return []
@@ -135,24 +136,33 @@ def generator_target_paths(generator: Path) -> list[str]:
     paths += [x['path'] for x in module.SVG_ASSETS]
     paths += [x['path'] for x in module.ICO_ASSETS]
     paths += [x['path'] for x in module.ICNS_ASSETS]
-    if hasattr(module, 'EXPECTED_CONTENTS_JSON_PATH'):
+    if include_ios_contents and hasattr(module, 'EXPECTED_CONTENTS_JSON_PATH'):
         paths += [module.EXPECTED_CONTENTS_JSON_PATH]
     return sorted(set(paths))
 
 
 def refresh_overlay_and_state(root: Path, cfg: dict[str, Any], master: Path) -> None:
     generator = root / 'scripts/apply_foxxdesk_icon.py'
-    files: list[str] = []
-    for rel in generator_target_paths(generator) + ['res/icon.png']:
+    required_files: list[str] = []
+    optional_files: list[str] = []
+    include_ios_contents = bool(cfg['icons'].get('update_ios_contents', False))
+    for rel in generator_target_paths(generator, include_ios_contents=include_ios_contents) + ['res/icon.png']:
         src = root / rel
         if not src.is_file():
             continue
         dst = root / '.foxxdesk/icon-overlay' / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
-        files.append(rel)
+        if rel in OPTIONAL_BRAND_ASSETS:
+            optional_files.append(rel)
+        else:
+            required_files.append(rel)
     (root / OVERLAY_MANIFEST_REL).write_text(
-        json.dumps({'schema': 2, 'files': sorted(set(files))}, indent=2, ensure_ascii=False) + '\n',
+        json.dumps({
+            'schema': 3,
+            'files': sorted(set(required_files)),
+            'optional_files': sorted(set(optional_files)),
+        }, indent=2, ensure_ascii=False) + '\n',
         encoding='utf-8',
     )
     icon_cfg = cfg['icons']
