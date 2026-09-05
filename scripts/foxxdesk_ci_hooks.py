@@ -11,7 +11,7 @@ import argparse
 import sys
 from pathlib import Path
 
-SCRIPT_VERSION = "foxxdesk-ci-hooks-v2-manual-build-2026-09-05"
+SCRIPT_VERSION = "foxxdesk-ci-hooks-v3-committed-manual-path-2026-09-05"
 HOOK_USES = "uses: ./.github/actions/prepare-foxxdesk"
 TARGETS = [
     # Only workflows used by the manual FoxxDesk build need the prepare hook.
@@ -188,6 +188,11 @@ def main() -> int:
         path = root / rel
         if not path.exists():
             # Some upstream versions may not ship every workflow; absence is not an error.
+            continue
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        checkouts = active_checkout_indexes(lines)
+        if not checkouts:
+            errors.append(f"{rel}: workflow existe, mas nenhum actions/checkout ativo foi encontrado; atualização upstream exige revisão do hook")
             continue
         missing = missing_hooks(path)
         if missing:

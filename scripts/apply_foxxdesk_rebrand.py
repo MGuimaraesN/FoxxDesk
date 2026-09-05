@@ -20,6 +20,7 @@ Objetivo:
 from __future__ import annotations
 
 import argparse
+import os
 import codecs
 import datetime as _dt
 import hashlib
@@ -31,7 +32,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCRIPT_VERSION = "v37-upstream-safe-manual-ci-2026-09-05"
+SCRIPT_VERSION = "v38-cross-platform-ci-safe-2026-09-05"
 APP_DISPLAY_NAME = "FoxxDesk"
 APP_SLUG = "foxxdesk"
 APP_SLUG_UPPER = "FOXXDESK"
@@ -1666,20 +1667,37 @@ def cleanup_obsolete_after_rename_files(target: Path, args: argparse.Namespace, 
                 report["pending"].append({"file": old_rel, "message": f"falha ao remover arquivo obsoleto: {exc}"})
 
 
-def ensure_executable_permissions(target: Path, args: argparse.Namespace, report: Dict[str, Any], backup_root: Optional[Path]) -> None:
-    '''Marca scripts críticos como executáveis para CI Linux/macOS.
+def _git_index_mode(target: Path, rel: str) -> Optional[str]:
+    """Return Git index mode (100755/100644/160000) when available."""
+    try:
+        cp = subprocess.run(
+            ["git", "ls-files", "--stage", "--", rel], cwd=str(target),
+            check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+    except OSError:
+        return None
+    for line in cp.stdout.splitlines():
+        m = re.match(r"^(\d{6})\s+[0-9a-fA-F]{40}\s+\d+\s+", line)
+        if m:
+            return m.group(1)
+    return None
 
-    Importante: o chmod no filesystem precisa ser seguido de `git add` para o
-    Git registrar o modo 100755. Isso cobre o caso de
-    `flutter/ndk_arm64.sh`, `flutter/build_android_deps.sh` e também `build.py`.
-    '''
+
+def ensure_executable_permissions(target: Path, args: argparse.Namespace, report: Dict[str, Any], backup_root: Optional[Path]) -> None:
+    """Apply POSIX executable bits only where the host filesystem supports them."""
     for rel in sorted(EXECUTABLE_FILES):
         path = target / rel
         if not path.exists() or not path.is_file():
-            # Só marca como ausente o que é realmente obrigatório na raiz.
-            # Outros scripts podem não existir em versões/forks diferentes.
-            if rel in {"build.py"}:
+            if rel == "build.py":
                 report["missing_files"].append(rel)
+            continue
+        report["analyzed_files"].append(rel)
+        if os.name == "nt":
+            git_mode = _git_index_mode(target, rel)
+            if git_mode == "100755":
+                report["already_applied_files"].append(rel)
+            else:
+                report["ignored_files"].append(rel + f" (Windows: chmod POSIX não aplicável; git mode={git_mode or 'desconhecido'})")
             continue
         try:
             mode = path.stat().st_mode
@@ -1687,14 +1705,12 @@ def ensure_executable_permissions(target: Path, args: argparse.Namespace, report
             report["pending"].append({"file": rel, "message": f"falha ao ler permissões: {exc}"})
             continue
         desired = mode | 0o111
-        report["analyzed_files"].append(rel)
         if mode == desired:
             report["already_applied_files"].append(rel)
             continue
         report["changed_files"].append(rel)
         report["changes"].append({
-            "file": rel,
-            "line": 1,
+            "file": rel, "line": 1,
             "status": "chmod +x" if args.apply else "aplicaria chmod +x",
             "action": "garantir bit executável no Git/CI",
             "message": "marca como executável; rode git add para registrar modo 100755",
@@ -3715,12 +3731,17 @@ def _v32_risks(target: Path) -> list[tuple[str, str]]:
 
     for rel in ['res/DEBIAN/preinst', 'res/DEBIAN/postinst', 'res/DEBIAN/prerm', 'res/DEBIAN/postrm']:
         p = target / rel
-        if p.exists():
-            try:
-                if p.stat().st_mode & 0o111 == 0:
-                    issues.append((rel, 'V32: maintainer script DEBIAN ainda não está executável no filesystem; rode apply e git add para registrar modo 100755'))
-            except OSError:
-                pass
+        if not p.exists():
+            continue
+        if os.name == 'nt':
+            # Windows has no authoritative POSIX executable bit. The Ubuntu
+            # preflight for the same commit validates it before build fan-out.
+            continue
+        try:
+            if p.stat().st_mode & 0o111 == 0:
+                issues.append((rel, 'V32: maintainer script DEBIAN ainda não está executável no filesystem; rode apply e git add para registrar modo 100755'))
+        except OSError:
+            pass
     return issues
 
 
@@ -3904,7 +3925,7 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
     ]
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V34 patch-only, englobando todas as correções anteriores e corrigindo definitivamente RustDesk.app/rustdesk.app nos workflows macOS.")
+    p = argparse.ArgumentParser(description="Aplica rebrand FoxxDesk V38 patch-only, cross-platform e upstream-safe.")
     p.add_argument("--target", default="./", help="Pasta raiz do projeto alvo. Padrão: ./")
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="Mostra o que seria alterado sem salvar arquivos do projeto, exceto relatório.")

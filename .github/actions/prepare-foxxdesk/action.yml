@@ -1,19 +1,8 @@
 name: Prepare FoxxDesk source
-description: Pin compatible hbb_common, apply safe brand patches and regenerate FoxxDesk icons from the master source
+description: Validate compatible hbb_common, apply safe brand patches and restore deterministic FoxxDesk icon assets
 runs:
   using: composite
   steps:
-    - name: Install FoxxDesk icon dependency
-      shell: bash
-      run: |
-        set -euo pipefail
-        if command -v python3 >/dev/null 2>&1; then
-          PYTHON_BIN=python3
-        else
-          PYTHON_BIN=python
-        fi
-        "$PYTHON_BIN" -m pip install --disable-pip-version-check --quiet "Pillow>=10,<13"
-
     - name: Prepare brand, icons and compatible dependency
       shell: bash
       run: |

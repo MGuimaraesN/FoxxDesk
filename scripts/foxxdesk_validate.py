@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-SCRIPT_VERSION = 'foxxdesk-validate-v2-config-safe-2026-09-04'
+SCRIPT_VERSION = 'foxxdesk-validate-v3-cross-platform-manual-ci-2026-09-05'
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from foxxdesk_config import CONFIG_REL, load_config  # noqa: E402
 
@@ -130,6 +130,17 @@ def main() -> int:
                 warnings.append('icon-state.json ausente; o próximo prepare irá criá-lo')
 
     errors.extend(f'hbb_common: {e}' for e in dependency_compatibility(root, cfg))
+
+    own_wf = root / '.github/workflows/foxxdesk-build.yml'
+    if own_wf.is_file():
+        own = read(own_wf)
+        if 'workflow_dispatch:' not in own:
+            errors.append('foxxdesk-build.yml: workflow_dispatch ausente')
+        for forbidden in ('\npush:', '\npull_request:', '\nschedule:'):
+            if forbidden in own:
+                errors.append(f'foxxdesk-build.yml: gatilho automático proibido detectado: {forbidden.strip(":\n")}')
+    else:
+        errors.append('workflow FoxxDesk manual ausente: .github/workflows/foxxdesk-build.yml')
 
     helpers = [
         'scripts/foxxdesk_config.py',

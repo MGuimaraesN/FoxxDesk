@@ -1,12 +1,12 @@
 {
-  "id": "com.foxxdesk.client",
+  "id": "com.rustdesk.RustDesk",
   "runtime": "org.freedesktop.Platform",
   "runtime-version": "24.08",
   "sdk": "org.freedesktop.Sdk",
-  "command": "foxxdesk",
+  "command": "rustdesk",
   "cleanup": ["/include", "/lib/pkgconfig", "/share/gtk-doc"],
-  "rename-desktop-file": "foxxdesk.desktop",
-  "rename-icon": "foxxdesk",
+  "rename-desktop-file": "rustdesk.desktop",
+  "rename-icon": "rustdesk",
   "modules": [
     "shared-modules/libappindicator/libappindicator-gtk3-12.10.json",
     {
@@ -34,21 +34,21 @@
       ]
     },
     {
-      "name": "foxxdesk",
+      "name": "rustdesk",
       "buildsystem": "simple",
       "build-commands": [
-        "bsdtar -Oxf foxxdesk.deb data.tar.xz | bsdtar -xf -",
+        "bsdtar -Oxf rustdesk.deb data.tar.xz | bsdtar -xf -",
         "cp -r usr/* /app/",
-        "mkdir -p /app/bin && ln -s /app/share/rustdesk/rustdesk /app/bin/foxxdesk"
+        "mkdir -p /app/bin && ln -s /app/share/rustdesk/rustdesk /app/bin/rustdesk"
       ],
       "sources": [
         {
           "type": "file",
-          "path": "foxxdesk.deb"
+          "path": "rustdesk.deb"
         },
         {
           "type": "file",
-          "path": "com.foxxdesk.client.metainfo.xml"
+          "path": "com.rustdesk.RustDesk.metainfo.xml"
         }
       ]
     }

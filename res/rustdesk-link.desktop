@@ -1,11 +1,11 @@
 [Desktop Entry]
-Name=FoxxDesk
+Name=RustDesk
 NoDisplay=true
-MimeType=x-scheme-handler/foxxdesk;
-TryExec=foxxdesk
-Exec=foxxdesk %u
-Icon=foxxdesk
+MimeType=x-scheme-handler/rustdesk;
+TryExec=rustdesk
+Exec=rustdesk %u
+Icon=rustdesk
 Terminal=false
 Type=Application
 StartupNotify=false
-StartupWMClass=foxxdesk
+StartupWMClass=rustdesk

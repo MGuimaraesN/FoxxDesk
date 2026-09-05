@@ -22,7 +22,7 @@ sciter.dll
 src/bridge_generated.rs
 src/bridge_generated.io.rs
 *deb
-foxxdesk
+rustdesk
 *.cache
 # appimage
 appimage/AppDir
@@ -56,24 +56,3 @@ vcpkg_installed
 flutter/lib/generated_plugin_registrant.dart
 libsciter.dylib
 flutter/web/
-.icon_asset_backup/*
-.rebrand_backup/*
-# FoxxDesk persistent overlay: must survive upstream source updates and be committed.
-!.foxxdesk/
-!.foxxdesk/**
-
-# Local preparation reports/backups are generated and must not be committed.
-rebrand_report.md
-rebrand_v*.log
-icon_assets_report.md
-
-# FoxxDesk v2 persistent sources/config MUST be committed even though upstream
-# ignores image extensions globally.
-!.foxxdesk/foxxdesk.config.json
-!.foxxdesk/foxxdesk.config.schema.json
-!.foxxdesk/icon-state.json
-!.foxxdesk/assets/
-!.foxxdesk/assets/icon.png
-!.foxxdesk/icon-overlay/
-!.foxxdesk/icon-overlay/**
-!.foxxdesk/icon-overlay-manifest.json

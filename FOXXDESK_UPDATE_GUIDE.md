@@ -40,3 +40,12 @@ A V3 não distribui `.gitignore`, `.gitattributes`, `ci.yml`, `bridge.yml`, `flu
 O workflow `FoxxDesk Build` é somente manual (`workflow_dispatch`). Hooks legados do FoxxDesk em `ci.yml` são removidos automaticamente.
 
 No Windows, `hbb_common` é preparado em staging no mesmo volume do workspace, evitando `WinError 17` e troca parcial de diretórios.
+
+## Resilience V4 (2026-09-05)
+
+- CI usa overlay de ícones autenticado e não instala Pillow no runner.
+- Windows não valida `chmod +x` via filesystem; Ubuntu preflight valida os modos POSIX.
+- `FoxxDesk Build` é somente manual.
+- `.gitignore` da raiz é protegido e nunca é alterado.
+- Hooks são reparados localmente; CI apenas verifica se foram commitados.
+

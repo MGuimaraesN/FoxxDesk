@@ -15,7 +15,7 @@
   "properties": {
     "version": {
       "type": "integer",
-      "const": 2
+      "minimum": 4
     },
     "brand": {
       "type": "object",
@@ -214,11 +214,19 @@
       "properties": {
         "manual_build_only": {
           "type": "boolean",
-          "description": "Mantém o workflow FoxxDesk Build somente em workflow_dispatch; não dispara em push/PR."
+          "description": "FoxxDesk Build deve usar apenas workflow_dispatch."
         },
         "prepare_only_manual_build_path": {
           "type": "boolean",
-          "description": "Injeta prepare somente em flutter-build/bridge usados pelo build manual, removendo hooks legados de CI automático."
+          "description": "Não injeta prepare nos workflows upstream de push/PR."
+        },
+        "install_icon_dependencies": {
+          "type": "boolean",
+          "description": "Legado. V4 mantém false; CI não instala Pillow no Python do runner."
+        },
+        "deterministic_icon_cache_in_ci": {
+          "type": "boolean",
+          "description": "Restaura overlay autenticado por SHA-256 no CI em vez de regenerar imagens por SO."
         }
       }
     },

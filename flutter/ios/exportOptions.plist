@@ -9,7 +9,7 @@
  <key>provisioningProfiles</key>
  <dict>
  <key>com.carriez.flutterHbb</key>
- <string>foxxdesk-ios-prod-app-store</string>
+ <string>rustdesk-ios-prod-app-store</string>
  </dict>
  </dict>
  </plist>

@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-SCRIPT_VERSION = "foxxdesk-prepare-v3-nonforced-ci-2026-09-05"
+SCRIPT_VERSION = "foxxdesk-prepare-v4-deterministic-ci-2026-09-05"
 STATE_REL = Path('.foxxdesk/icon-state.json')
 OVERLAY_MANIFEST_REL = Path('.foxxdesk/icon-overlay-manifest.json')
 
@@ -168,7 +168,7 @@ def refresh_overlay_and_state(root: Path, cfg: dict[str, Any], master: Path) -> 
     (root / STATE_REL).write_text(json.dumps(state, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
 
 
-def apply_icons(root: Path, cfg: dict[str, Any], *, apply: bool, force_regenerate: bool = False) -> None:
+def apply_icons(root: Path, cfg: dict[str, Any], *, apply: bool, force_regenerate: bool = False, ci_mode: bool = False) -> None:
     icons = cfg['icons']
     if not bool(icons.get('enabled', True)) or not bool(icons.get('apply_on_prepare', True)):
         print('[icons] desativado pela configuração')
@@ -182,6 +182,15 @@ def apply_icons(root: Path, cfg: dict[str, Any], *, apply: bool, force_regenerat
     # always derived from the persistent master, never the other way around unless
     # the verified CI fallback had to seed a missing master.
     copy_if_changed(master, root / 'res/icon.png')
+
+    # CI is byte-for-byte deterministic across Windows/macOS/Linux. Never install
+    # Pillow into the runner Python and never regenerate PNG/ICO/ICNS per platform.
+    # The committed overlay was generated locally from the master icon and is
+    # authenticated by icon-state.json/master_sha256.
+    if ci_mode:
+        changed = restore_overlay_cache(root, master)
+        print(f"[icons] CI determinístico: cache verificado restaurado: {changed} arquivo(s)")
+        return
 
     if not pillow_available():
         changed = restore_overlay_cache(root, master)
@@ -272,6 +281,13 @@ def ensure_ci_hooks(root: Path) -> None:
     )
 
 
+def check_ci_hooks(root: Path) -> None:
+    subprocess.run(
+        [sys.executable, str(root / 'scripts/foxxdesk_ci_hooks.py'), '--target', str(root), '--check'],
+        cwd=str(root), check=True,
+    )
+
+
 def validate(root: Path) -> None:
     subprocess.run(
         [sys.executable, str(root / 'scripts/foxxdesk_validate.py'), '--target', str(root)],
@@ -318,7 +334,12 @@ def main() -> int:
             profile = str(rebrand_cfg.get('profile', 'runtime'))
 
         if apply:
-            ensure_ci_hooks(root)
+            if args.ci:
+                # Reusable workflow graphs are resolved before jobs run. CI may
+                # validate committed hooks, but cannot repair them for this run.
+                check_ci_hooks(root)
+            else:
+                ensure_ci_hooks(root)
 
         should_sync = apply and (
             args.sync_deps or args.force_sync_deps or args.ci or bool(cfg.get('upstream', {}).get('sync_hbb_common', True))
@@ -329,9 +350,16 @@ def main() -> int:
         run_rebrand(root, cfg, profile, dry_run=not apply)
 
         if apply:
-            ensure_ci_hooks(root)
+            if args.ci:
+                check_ci_hooks(root)
+            else:
+                ensure_ci_hooks(root)
             if not args.skip_icons:
-                apply_icons(root, cfg, apply=True, force_regenerate=args.regenerate_icons)
+                apply_icons(
+                    root, cfg, apply=True,
+                    force_regenerate=args.regenerate_icons,
+                    ci_mode=args.ci,
+                )
 
         if apply and not args.skip_validate:
             validate(root)
