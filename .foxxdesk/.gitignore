@@ -1,8 +1,0 @@
-# FoxxDesk-owned assets must remain versionable even when the upstream root
-# ignores *.png/*.ico globally. This file never modifies the root .gitignore.
-!assets/
-!assets/**
-!icon-overlay/
-!icon-overlay/**
-!icon-state.json
-!icon-overlay-manifest.json
