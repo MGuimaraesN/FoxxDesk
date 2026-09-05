@@ -2814,7 +2814,7 @@ pub fn main_get_common(key: String) -> String {
     if key == "is-printer-installed" {
         #[cfg(target_os = "windows")]
         {
-            return match remote_printer::is_rd_printer_installed(&get_app_name()) {
+            return match remote_printer::is_rd_printer_installed("foxxdesk") {
                 Ok(r) => r.to_string(),
                 Err(e) => e.to_string(),
             };
@@ -2861,12 +2861,12 @@ pub fn main_get_common(key: String) -> String {
                 crate::common::is_custom_client(),
             ) {
                 (Ok(true), false) => match crate::platform::windows::release_arch_suffix() {
-                    Some(arch) => format!("rustdesk-{_version}-{arch}.msi"),
+                    Some(arch) => format!("foxxdesk-{_version}-{arch}.msi"),
                     None => "error:unsupported".to_owned(),
                 },
                 (Ok(true), true) | (Ok(false), _) => {
                     match crate::platform::windows::release_arch_suffix() {
-                        Some(arch) => format!("rustdesk-{_version}-{arch}.exe"),
+                        Some(arch) => format!("foxxdesk-{_version}-{arch}.exe"),
                         None => "error:unsupported".to_owned(),
                     }
                 }
@@ -2878,9 +2878,9 @@ pub fn main_get_common(key: String) -> String {
             #[cfg(target_os = "macos")]
             {
                 return if cfg!(target_arch = "x86_64") {
-                    format!("rustdesk-{_version}-x86_64.dmg")
+                    format!("foxxdesk-{_version}-x86_64.dmg")
                 } else if cfg!(target_arch = "aarch64") {
-                    format!("rustdesk-{_version}-aarch64.dmg")
+                    format!("foxxdesk-{_version}-aarch64.dmg")
                 } else {
                     "error:unsupported".to_owned()
                 };
@@ -2903,7 +2903,7 @@ pub fn main_set_common(_key: String, _value: String) {
     #[cfg(target_os = "windows")]
     if _key == "install-printer" && crate::platform::is_win_10_or_greater() {
         std::thread::spawn(move || {
-            let (success, msg) = match remote_printer::install_update_printer(&get_app_name()) {
+            let (success, msg) = match remote_printer::install_update_printer("foxxdesk") {
                 Ok(_) => (true, "".to_owned()),
                 Err(e) => {
                     let err = e.to_string();
