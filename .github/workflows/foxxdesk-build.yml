@@ -1,7 +1,7 @@
 name: FoxxDesk Build
 
 on:
-  # Manual only by design. Build starts only from Actions > FoxxDesk Build > Run workflow.
+  # Intentionally manual-only. Never run the expensive FoxxDesk build on push/PR.
   workflow_dispatch:
     inputs:
       upload_artifact:

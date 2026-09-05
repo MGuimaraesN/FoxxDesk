@@ -1,0 +1,13 @@
+2026-09-04 21:52:22,859 [INFO] FoxxDesk rebrand v38-cross-platform-ci-safe-2026-09-05 iniciado
+2026-09-04 21:52:22,860 [INFO] Target: /home/mateus/_Projects/FoxxDesk
+2026-09-04 21:52:22,860 [INFO] Modo: apply | profile=runtime | scan_all=False
+2026-09-04 21:52:22,860 [INFO] Icon assets: pipeline externo foxxdesk_prepare.py
+2026-09-04 21:52:22,862 [INFO] Etapa: hbb_common pulado por --skip-hbb-common-download
+2026-09-04 21:52:22,862 [INFO] Etapa: criar/atualizar helpers e workflow FoxxDesk
+2026-09-04 21:52:22,865 [INFO] Etapa: aplicar renomeações seguras e remover obsoletos
+2026-09-04 21:52:22,876 [INFO] Etapa: processar 203 arquivo(s) candidato(s)
+2026-09-04 21:52:23,114 [INFO] Etapa: reforçar helper bridge e permissões executáveis
+2026-09-04 21:52:23,122 [INFO] Etapa: icon assets V34
+2026-09-04 21:52:23,122 [INFO] Icon assets: gerenciados externamente por foxxdesk_prepare.py
+2026-09-04 21:52:23,122 [INFO] Etapa: validação final de segurança/build
+2026-09-04 21:52:23,290 [INFO] Resumo final: alterados=65 pendencias=0 nao_encontrados=0 relatorio=/home/mateus/_Projects/FoxxDesk/rebrand_report.md
