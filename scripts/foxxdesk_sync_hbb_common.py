@@ -21,9 +21,12 @@ from pathlib import Path
 
 SCRIPT_VERSION = "foxxdesk-hbb-sync-v1-2026-09-04"
 HBB_URL = "https://github.com/rustdesk/hbb_common.git"
-CONFIG_REL = Path(".foxxdesk/brand.json")
+CONFIG_REL = Path(".foxxdesk/foxxdesk.config.json")
 HBB_REL = Path("libs/hbb_common")
 MARKER = ".foxxdesk_upstream_commit"
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from foxxdesk_config import load_config, save_config  # noqa: E402
 
 
 class SyncError(RuntimeError):
@@ -246,13 +249,12 @@ def persist_version_pin(root: Path, cfg: dict, commit: str) -> bool:
     if str(pins.get(version, "")).lower() == commit.lower():
         return False
     pins[version] = commit.lower()
-    path = root / CONFIG_REL
-    path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    save_config(root, cfg)
     return True
 
 
 def synchronize(root: Path, *, force: bool = False, check_only: bool = False) -> tuple[bool, str]:
-    cfg = read_json(root / CONFIG_REL)
+    cfg, _ = load_config(root, migrate_legacy=True, write_migration=False)
     expected, source = expected_commit(root, cfg)
     current = current_hbb_commit(root)
     compat_before = compatibility_errors(root)
@@ -286,7 +288,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--target", default=".", help="Raiz do projeto")
     p.add_argument("--force", action="store_true", help="Força restaurar exatamente o commit esperado")
     p.add_argument("--check", action="store_true", help="Somente valida; não baixa nem altera")
-    p.add_argument("--write-pin", action="store_true", help="Grava o SHA resolvido em .foxxdesk/brand.json para builds reprodutíveis")
+    p.add_argument("--write-pin", action="store_true", help="Grava o SHA resolvido em .foxxdesk/foxxdesk.config.json para builds reprodutíveis")
     return p.parse_args()
 
 
@@ -296,7 +298,7 @@ def main() -> int:
     try:
         changed, expected = synchronize(root, force=args.force, check_only=args.check)
         if args.write_pin and not args.check:
-            cfg = read_json(root / CONFIG_REL)
+            cfg, _ = load_config(root, migrate_legacy=True, write_migration=False)
             if persist_version_pin(root, cfg, expected):
                 print(f"[hbb] pin persistido para RustDesk {cargo_version(root)}")
     except (SyncError, FileNotFoundError, subprocess.CalledProcessError) as exc:

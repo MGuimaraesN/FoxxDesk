@@ -19,19 +19,30 @@
     "apply_on_prepare": true,
     "discover_by_name": true,
     "quality_profile": "best",
-    "min_source_size": 1024,
-    "recommended_source_size": 2048,
+    "min_source_size": 512,
+    "recommended_source_size": 1024,
     "padding_ratio": 0.0,
     "ios_background": "#FFFFFF",
     "png_compress_level": 9,
-    "png_optimize": true
+    "png_optimize": true,
+    "fallback_sources": [
+      "res/icon.png",
+      ".foxxdesk/icon-overlay/res/icon.png"
+    ],
+    "auto_seed_missing_source": true,
+    "create_brand_owned_assets": true,
+    "update_ios_contents": false
   },
   "rebrand": {
-    "profile": "full",
+    "profile": "runtime",
     "scan_all": false,
     "patch_only": true,
     "replace_whole_source_files": false,
-    "protect_upstream_names": true
+    "protect_upstream_names": true,
+    "ci_profile": "runtime",
+    "bootstrap_profile": "full",
+    "remove_old_renamed": false,
+    "allow_internal_slug_change": false
   },
   "build": {
     "flutter": true,
@@ -46,11 +57,23 @@
   },
   "github_actions": {
     "enabled": true,
-    "validate_before_build": true
+    "validate_before_build": true,
+    "install_icon_dependencies": true
   },
   "safety": {
     "fail_on_missing_required_files": true,
     "fail_on_incompatible_hbb_common": true,
-    "backup_before_patch": true
+    "backup_before_patch": true,
+    "require_nonempty_server": true,
+    "require_nonempty_key": true,
+    "allow_unverified_icon_fallback": false
+  },
+  "version": 2,
+  "upstream": {
+    "rustdesk_ref": "auto",
+    "sync_hbb_common": true,
+    "hbb_common_pins": {
+      "1.4.9": "7e1c392c62d39c364127307cd408421dd5f8cfb0"
+    }
   }
 }

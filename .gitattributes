@@ -1,1 +1,11 @@
-* text=auto
+# FoxxDesk persistent binary brand assets
+.foxxdesk/assets/*.png binary
+.foxxdesk/icon-overlay/**/*.png binary
+.foxxdesk/icon-overlay/**/*.ico binary
+.foxxdesk/icon-overlay/**/*.icns binary
+
+# Preserve LF for CI helpers/workflows
+scripts/foxxdesk_*.py text eol=lf
+scripts/apply_foxxdesk_*.py text eol=lf
+.github/actions/prepare-foxxdesk/action.yml text eol=lf
+.github/workflows/*.yml text eol=lf

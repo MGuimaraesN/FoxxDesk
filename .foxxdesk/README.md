@@ -1,16 +1,21 @@
-# FoxxDesk overlay persistente
+# `.foxxdesk` — fonte persistente do FoxxDesk
 
-Esta pasta é a fonte de verdade do custom build e **não deve ser substituída** ao copiar uma nova versão do RustDesk para o projeto.
+Esta pasta deve sobreviver às atualizações do RustDesk e ser versionada no Git.
 
-- `brand.json`: nome, slug, servidor, relay, chave pública e revisão compatível de `hbb_common`.
-- `assets/icon.png`: ícone mestre FoxxDesk.
-- `icon-overlay/`: cópias dos assets já gerados para que o GitHub Actions restaure os ícones sem depender de Pillow em cada job.
+- `foxxdesk.config.json`: **única configuração editável** do FoxxDesk.
+- `foxxdesk.config.schema.json`: schema para validação/autocomplete.
+- `assets/icon.png`: ícone mestre oficial.
+- `icon-state.json`: SHA-256 do master e parâmetros usados; valida fallback seguro no CI.
+- `icon-overlay/`: cache dos assets gerados. É fallback/cache, não fonte principal.
+- `icon-overlay-manifest.json`: lista do cache.
 
-Fluxo recomendado depois de copiar uma atualização do upstream:
+O antigo `brand.json` não é mais necessário.
+
+Atualização normal:
 
 ```bash
-python scripts/foxxdesk_prepare.py --apply --yes --sync-deps --regenerate-icons
-python scripts/foxxdesk_validate.py
+python3 scripts/foxxdesk_prepare.py --target . --apply --yes --sync-deps
+python3 scripts/foxxdesk_validate.py --target .
 ```
 
-No GitHub Actions, `foxxdesk_prepare.py --ci` sincroniza `hbb_common` com a revisão correta da versão, reaplica o brand, restaura os ícones e valida os hooks dos workflows antes de compilar.
+O perfil padrão é `runtime`. Use `--bootstrap` somente para primeira conversão/auditoria completa.

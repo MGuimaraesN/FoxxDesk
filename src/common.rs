@@ -1006,7 +1006,7 @@ pub fn get_app_name() -> String {
 
 #[inline]
 pub fn is_rustdesk() -> bool {
-    hbb_common::config::APP_NAME.read().unwrap().eq("FoxxDesk")
+    hbb_common::config::APP_NAME.read().unwrap().eq("RustDesk")
 }
 
 #[inline]
@@ -1086,7 +1086,7 @@ fn get_api_server_(api: String, custom: String) -> String {
 #[inline]
 pub fn is_public(url: &str) -> bool {
     let url = url.to_ascii_lowercase();
-    url.contains("foxxdesk.com/") || url.ends_with("foxxdesk.com")
+    url.contains("rustdesk.com/") || url.ends_with("rustdesk.com")
 }
 
 pub fn get_udp_punch_enabled() -> bool {
@@ -1922,7 +1922,7 @@ pub fn check_process(arg: &str, mut same_uid: bool) -> bool {
         if same_uid && p.user_id() != my_uid {
             continue;
         }
-        // on mac, p.cmd() get "/Applications/FoxxDesk.app/Contents/MacOS/FoxxDesk", "XPC_SERVICE_NAME=com.carriez.RustDesk_server"
+        // on mac, p.cmd() get "/Applications/RustDesk.app/Contents/MacOS/RustDesk", "XPC_SERVICE_NAME=com.carriez.RustDesk_server"
         let parg = if p.cmd().len() <= 1 { "" } else { &p.cmd()[1] };
         if arg.is_empty() {
             if !parg.starts_with("--") {
@@ -2201,11 +2201,6 @@ pub fn read_custom_client(config: &str) {
 
     if let Some(app_name) = data.remove("app-name") {
         if let Some(app_name) = app_name.as_str() {
-            let app_name = if app_name.eq_ignore_ascii_case("foxxdesk") {
-                "FoxxDesk"
-            } else {
-                app_name
-            };
             *config::APP_NAME.write().unwrap() = app_name.to_owned();
         }
     }
@@ -2286,7 +2281,7 @@ pub fn get_builtin_option(key: &str) -> String {
 
 #[inline]
 pub fn is_custom_client() -> bool {
-    get_app_name() != "FoxxDesk"
+    get_app_name() != "RustDesk"
 }
 
 pub fn verify_login(_raw: &str, _id: &str) -> bool {
@@ -2771,17 +2766,17 @@ mod tests {
 
     #[test]
     fn test_is_public() {
-        // Test URLs containing "foxxdesk.com/"
+        // Test URLs containing "rustdesk.com/"
         assert!(is_public("https://rustdesk.com/"));
         assert!(is_public("https://www.rustdesk.com/"));
         assert!(is_public("https://api.rustdesk.com/v1"));
-        assert!(is_public("https://API.FOXXDESK.COM/v1"));
+        assert!(is_public("https://API.RUSTDESK.COM/v1"));
         assert!(is_public("https://rustdesk.com/path"));
 
-        // Test URLs ending with "foxxdesk.com"
-        assert!(is_public("foxxdesk.com"));
+        // Test URLs ending with "rustdesk.com"
+        assert!(is_public("rustdesk.com"));
         assert!(is_public("https://rustdesk.com"));
-        assert!(is_public("https://FoxxDesk.com"));
+        assert!(is_public("https://RustDesk.com"));
         assert!(is_public("http://www.rustdesk.com"));
         assert!(is_public("https://api.rustdesk.com"));
 
@@ -2791,7 +2786,7 @@ mod tests {
         assert!(!is_public("http://192.168.1.1"));
         assert!(!is_public("localhost"));
         assert!(!is_public("https://rustdesk.computer.com"));
-        assert!(!is_public("foxxdesk.comhello.com"));
+        assert!(!is_public("rustdesk.comhello.com"));
     }
 
     #[test]

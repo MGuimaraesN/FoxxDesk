@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCRIPT_VERSION = "v35-resilient-upstream-ci-2026-09-04"
+SCRIPT_VERSION = "v36-runtime-config-safe-ci-2026-09-04"
 APP_DISPLAY_NAME = "FoxxDesk"
 APP_SLUG = "foxxdesk"
 APP_SLUG_UPPER = "FOXXDESK"
@@ -42,6 +42,27 @@ COPYRIGHT_OWNER = "MGN Systems"
 COPYRIGHT_YEAR = str(_dt.datetime.now().year)
 COPYRIGHT_TEXT = f"Copyright © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}. All rights reserved."
 COPYRIGHT_HTML = f"Copyright &copy; {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}."
+
+
+def configure_brand_globals(args: argparse.Namespace) -> None:
+    """Set public brand values from the central config/CLI before patching.
+
+    Internal API identifiers remain protected by the patch rules; this only changes
+    the values the script intentionally exposes as configurable.
+    """
+    global APP_DISPLAY_NAME, APP_SLUG, APP_SLUG_UPPER, COPYRIGHT_OWNER, COPYRIGHT_TEXT, COPYRIGHT_HTML
+    global DEFAULT_MAINTAINER_EMAIL
+    if getattr(args, "display_name", None):
+        APP_DISPLAY_NAME = str(args.display_name)
+    if getattr(args, "slug", None):
+        APP_SLUG = str(args.slug)
+        APP_SLUG_UPPER = APP_SLUG.upper()
+    if getattr(args, "company", None):
+        COPYRIGHT_OWNER = str(args.company)
+    if getattr(args, "maintainer_email", None):
+        DEFAULT_MAINTAINER_EMAIL = str(args.maintainer_email)
+    COPYRIGHT_TEXT = f"Copyright © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}. All rights reserved."
+    COPYRIGHT_HTML = f"Copyright &copy; {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}."
 
 BINARY_EXTS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".icns", ".exe", ".dll",
@@ -355,6 +376,32 @@ SAFE_CORE_FILES: List[str] = [
 ]
 
 
+# Runtime profile: reaplica o brand necessário ao produto/build após uma atualização
+# sem tocar documentação/contribuição nem arquivos hbb_common de API/plataforma.
+RUNTIME_EXCLUDE_PREFIXES = ("docs/",)
+RUNTIME_EXCLUDE_FILES = {
+    ".github/FUNDING.yml",
+    ".github/ISSUE_TEMPLATE/bug_report.yaml",
+    "AGENTS.md",
+    "BRAND_CHANGELOG.md",
+    "FOXXDESK_MAX_SAFE_BRAND_REPORT.md",
+    "FOXXDESK_SERVER_DEFAULTS.md",
+    "NOTICE.md",
+    "README.md",
+    "libs/clipboard/README.md",
+    "res/msi/README.md",
+    # hbb_common deve permanecer o mais próximo possível da revisão upstream;
+    # somente config.rs recebe defaults/APP_NAME FoxxDesk.
+    "libs/hbb_common/src/platform/linux.rs",
+    "libs/hbb_common/src/platform/mod.rs",
+    "libs/hbb_common/src/fs.rs",
+}
+RUNTIME_FILES: List[str] = [
+    rel for rel in ALLOWED_FILES
+    if not rel.startswith(RUNTIME_EXCLUDE_PREFIXES) and rel not in RUNTIME_EXCLUDE_FILES
+]
+
+
 GENERATED_HELPER_FILES: set[str] = {
     "scripts/fix_generated_bridge_compat.py",
     "scripts/fix_foxxdesk_windows_flutter_build.py",
@@ -387,19 +434,9 @@ EXECUTABLE_FILES: set[str] = {
 # No WiX SDK, todos os .wxs do diretório entram no build; manter RustDesk.wxs
 # junto com FoxxDesk.wxs duplica ComponentGroup:Components e Component:App.StartMenu.
 OBSOLETE_AFTER_RENAME_FILES: Dict[str, str] = {
-    # Arquivos que foram substituídos pelo novo nome. Se ambos existirem,
-    # o antigo é removido por padrão para evitar build duplicado e branding misto.
-    ".github/workflows/rustdesk-build.yml": ".github/workflows/foxxdesk-build.yml",
-    "flatpak/com.rustdesk.RustDesk.metainfo.xml": "flatpak/com.foxxdesk.client.metainfo.xml",
-    "flatpak/com.rustdesk.client.metainfo.xml": "flatpak/com.foxxdesk.client.metainfo.xml",
-    "flatpak/rustdesk.json": "flatpak/foxxdesk.json",
-    "res/rustdesk-link.desktop": "res/foxxdesk-link.desktop",
-    "res/rustdesk.desktop": "res/foxxdesk.desktop",
-    "res/rustdesk.service": "res/foxxdesk.service",
-    "res/pam.d/rustdesk.debian": "res/pam.d/foxxdesk.debian",
-    "res/pam.d/rustdesk.suse": "res/pam.d/foxxdesk.suse",
-    # No WiX SDK, todos os .wxs do diretório entram no build; manter RustDesk.wxs
-    # junto com FoxxDesk.wxs duplica ComponentGroup:Components e Component:App.StartMenu.
+    # Único cleanup automático padrão: o WiX SDK compila todos os .wxs do
+    # diretório e os dois arquivos coexistindo geram IDs duplicados. Outros
+    # arquivos upstream são preservados; remova-os apenas com --remove-old-renamed.
     "res/msi/Package/Components/RustDesk.wxs": "res/msi/Package/Components/FoxxDesk.wxs",
 }
 
@@ -1389,7 +1426,7 @@ def ensure_hbb_common_before_branding(target: Path, args: argparse.Namespace, re
     """Sincroniza hbb_common pela revisão compatível; nunca baixa a branch main.
 
     A revisão vem do gitlink do submódulo quando disponível ou de
-    .foxxdesk/brand.json/versão do Cargo.toml. Isso evita misturar uma release
+    .foxxdesk/foxxdesk.config.json/versão do Cargo.toml. Isso evita misturar uma release
     do RustDesk com hbb_common mais novo.
     """
     rel = "libs/hbb_common"
@@ -2871,8 +2908,8 @@ def ensure_v25_generated_files(target: Path, args: argparse.Namespace, report: D
         args,
         report,
         backup_root,
-        "criar/atualizar gerador de assets de ícone FoxxDesk",
-        create_only=False,
+        "criar gerador de assets de ícone FoxxDesk somente se ausente",
+        create_only=True,
     )
 
 
@@ -2898,13 +2935,21 @@ def setup_logging_v28(target: Path, args: argparse.Namespace, report: Dict[str, 
     logging.info("FoxxDesk rebrand %s iniciado", SCRIPT_VERSION)
     logging.info("Target: %s", target)
     logging.info("Modo: %s | profile=%s | scan_all=%s", "apply" if args.apply else "dry-run", args.profile, args.scan_all)
-    logging.info("Icon assets: %s | source=%s", bool(getattr(args, "apply_icon_assets", False)), getattr(args, "icon_source", "res/icon.png"))
+    
+    if getattr(args, "icons_managed_externally", False):
+        logging.info("Icon assets: pipeline externo foxxdesk_prepare.py")
+    else:
+        logging.info("Icon assets: %s | source=%s", bool(getattr(args, "apply_icon_assets", False)), getattr(args, "icon_source", "res/icon.png"))
 
 
 def run_icon_assets_v28(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:
     """Executa o gerador de ícones apenas quando --apply-icon-assets for informado."""
     rel = "scripts/apply_foxxdesk_icon.py"
     report["analyzed_files"].append(rel)
+    if getattr(args, "icons_managed_externally", False):
+        logging.info("Icon assets: gerenciados externamente por foxxdesk_prepare.py")
+        report["already_applied_files"].append("icon assets (pipeline externo)")
+        return
     if not getattr(args, "apply_icon_assets", False):
         logging.info("Icon assets: pulado porque --apply-icon-assets não foi informado")
         report["ignored_files"].append("icon assets (flag --apply-icon-assets não informada)")
@@ -2949,7 +2994,7 @@ def run_icon_assets_v28(target: Path, args: argparse.Namespace, report: Dict[str
         logging.warning("Icon assets stderr:\n%s", completed.stderr.strip())
 
     if completed.returncode != 0:
-        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v35.log"})
+        report["pending"].append({"file": rel, "message": f"gerador de ícones falhou com exit {completed.returncode}; veja icon_assets_report.md e rebrand_v36.log"})
         return
 
     changed_match = re.search(r"arquivos alterados:\s*(\d+)", completed.stdout or "")
@@ -3160,8 +3205,8 @@ def validate_build_safety(target: Path, report: Dict[str, Any]) -> None:  # type
 
 
 def setup_logging_v28(target: Path, args: argparse.Namespace, report: Dict[str, Any]) -> None:  # type: ignore[override]
-    """V30: mantém flags de logging da V28, mas usa rebrand_v35.log por padrão."""
-    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v35.log"
+    """V36: mantém flags de logging e usa rebrand_v36.log por padrão."""
+    log_path = Path(args.log_file).expanduser().resolve() if getattr(args, "log_file", None) else target / "rebrand_v36.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     level = logging.DEBUG if getattr(args, "verbose", False) else logging.INFO
     root_logger = logging.getLogger()
@@ -3181,7 +3226,11 @@ def setup_logging_v28(target: Path, args: argparse.Namespace, report: Dict[str, 
     logging.info("FoxxDesk rebrand %s iniciado", SCRIPT_VERSION)
     logging.info("Target: %s", target)
     logging.info("Modo: %s | profile=%s | scan_all=%s", "apply" if args.apply else "dry-run", args.profile, args.scan_all)
-    logging.info("Icon assets: %s | source=%s", bool(getattr(args, "apply_icon_assets", False)), getattr(args, "icon_source", "res/icon.png"))
+    
+    if getattr(args, "icons_managed_externally", False):
+        logging.info("Icon assets: pipeline externo foxxdesk_prepare.py")
+    else:
+        logging.info("Icon assets: %s | source=%s", bool(getattr(args, "apply_icon_assets", False)), getattr(args, "icon_source", "res/icon.png"))
 
 
 # ---------------------------------------------------------------------------
@@ -3839,9 +3888,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--server", default=None, help="Domínio/IP do servidor FoxxDesk. Se omitido, usa o DEFAULT_SERVER embutido na v23 e grava defaults ocultos em config.rs.")
     p.add_argument("--relay", default=None, help="Domínio/IP do relay FoxxDesk. Se omitido, usa o mesmo valor do server e grava em config.rs/workflow.")
     p.add_argument("--key", default=None, help="Chave pública do hbbs. Se omitida, usa DEFAULT_KEY e grava em config.rs/workflow.")
+    p.add_argument("--display-name", default=None, help="Nome público do aplicativo. Padrão: FoxxDesk")
+    p.add_argument("--slug", default=None, help="Slug interno/pacote. Altere somente se souber que todos os identificadores internos são compatíveis.")
+    p.add_argument("--company", default=None, help="Empresa/detentora do copyright e metadados.")
     p.add_argument("--maintainer-email", default=None, help="E-mail do mantenedor em metadados de pacote.")
     p.add_argument("--homepage", default=None, help="Homepage pública para metadados. Se omitido, usa --server.")
-    p.add_argument("--profile", choices=["safe", "full"], default="safe", help="safe: núcleo crítico/build (padrão e recomendado); full: allowlist completa para reaplicar o brand após uma atualização.")
+    p.add_argument("--profile", choices=["safe", "runtime", "full"], default="safe", help="safe: núcleo mínimo; runtime: produto/build sem documentação (recomendado para updates/CI); full: allowlist completa para bootstrap/auditoria.")
     p.add_argument("--scan-all", action="store_true", help="Opcional: varre todos os arquivos textuais fora das pastas ignoradas. Recomendado só com --profile full.")
     p.add_argument("--max-size", type=int, default=2_000_000, help="Tamanho máximo por arquivo textual analisado. Padrão: 2MB.")
     p.add_argument("--remove-old-renamed", action="store_true", help="Depois de copiar arquivos renomeados, remove os antigos. Use só após conferir o dry-run.")
@@ -3851,7 +3903,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--icon-source", default="res/icon.png", help="Imagem fonte relativa ao projeto para gerar os ícones. Padrão: res/icon.png")
     p.add_argument("--icon-ios-background", default="#FFFFFF", help="Fundo usado para achatar ícones iOS/RGB. Padrão: #FFFFFF")
     p.add_argument("--icon-update-ios-contents", action="store_true", help="Também normaliza flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json")
-    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v35.log")
+    p.add_argument("--icons-managed-externally", action="store_true", help="Ícones são tratados pelo foxxdesk_prepare.py; suprime o pipeline legado interno.")
+    p.add_argument("--log-file", default=None, help="Arquivo de log detalhado. Padrão: <target>/rebrand_v36.log")
     p.add_argument("--verbose", action="store_true", help="Ativa logging DEBUG no arquivo/console.")
     p.add_argument("--quiet", action="store_true", help="Não imprime logs no console; mantém log em arquivo.")
     return p.parse_args()
@@ -3864,6 +3917,10 @@ def main() -> int:
     args.key = safe_cli_value("--key", args.key)
     args.maintainer_email = safe_cli_value("--maintainer-email", args.maintainer_email)
     args.homepage = safe_cli_value("--homepage", args.homepage)
+    args.display_name = safe_cli_value("--display-name", args.display_name)
+    args.slug = safe_cli_value("--slug", args.slug)
+    args.company = safe_cli_value("--company", args.company)
+    configure_brand_globals(args)
 
     target = Path(args.target).expanduser().resolve()
     if not target.exists():
@@ -3906,6 +3963,8 @@ def main() -> int:
         candidates = sorted(set(iter_scan_files(target, args.max_size)))
     elif args.profile == "full":
         candidates = sorted(set(ALLOWED_FILES) | set(FILE_RENAMES.values()) | set(FILE_RENAMES.keys()))
+    elif args.profile == "runtime":
+        candidates = sorted(set(RUNTIME_FILES) | set(FILE_RENAMES.values()))
     else:
         # Em safe mode, não mexe nos arquivos antigos se o destino novo já existe.
         # O apply_file_renames já copia o antigo para o novo quando necessário.

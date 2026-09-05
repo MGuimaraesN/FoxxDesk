@@ -37,7 +37,7 @@ pub struct DeviceInfo {
     #[serde(default)]
     pub r#type: String,
 
-    /// device name from foxxdesk client,
+    /// device name from rustdesk client,
     /// browser info(name + version) from browser
     #[serde(default)]
     pub name: String,

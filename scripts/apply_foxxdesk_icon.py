@@ -36,12 +36,16 @@ from typing import Any
 
 from PIL import Image, ImageOps
 
-SCRIPT_VERSION = "icon-assets-v3-all-system-logos-2026-07-01"
+SCRIPT_VERSION = "icon-assets-v4-config-safe-2026-09-04"
+CURRENT_PADDING_RATIO = 0.0
+PNG_OPTIMIZE = True
+PNG_COMPRESS_LEVEL = 9
 
 try:
     LANCZOS = Image.Resampling.LANCZOS
 except AttributeError:  # Pillow < 9
     LANCZOS = Image.LANCZOS
+RESAMPLE_FILTER = LANCZOS
 
 EXCLUDED = {
     "res/logo-header.svg",
@@ -137,12 +141,93 @@ ALL_IMAGE_ASSETS: list[dict[str, Any]] = (
 EXPECTED_CONTENTS_JSON_PATH = "flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json"
 
 
+SAFE_DISCOVERY_ROOTS = [
+    "res",
+    "fastlane/metadata",
+    "flutter/android/app/src/main/res",
+    "flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset",
+    "flutter/windows/runner/resources",
+]
+DISCOVER_PNG_NAMES = {
+    "icon.png", "app_icon.png", "ic_launcher.png", "ic_launcher_round.png",
+    "ic_launcher_foreground.png", "ic_stat_logo.png", "mac-icon.png",
+}
+
+
+def discover_png_assets(root: Path, known: set[str]) -> list[dict[str, Any]]:
+    """Find only existing icon-like PNGs in known platform roots.
+
+    Discovery never scans arbitrary project images and never creates a path it did
+    not find.  This keeps updates surgical while allowing new upstream density or
+    metadata folders to inherit the FoxxDesk icon automatically.
+    """
+    out: list[dict[str, Any]] = []
+    for safe_rel in SAFE_DISCOVERY_ROOTS:
+        base = root / safe_rel
+        if not base.exists():
+            continue
+        for path in base.rglob("*.png"):
+            rel = path.relative_to(root).as_posix()
+            if rel in known or rel in EXCLUDED or path.name.lower() not in DISCOVER_PNG_NAMES:
+                continue
+            # Fastlane icon.png is safe only below an images directory.  Avoid
+            # replacing arbitrary docs/screenshots named icon.png.
+            if path.name.lower() == "icon.png" and "fastlane/metadata" in rel and "/images/" not in rel:
+                continue
+            try:
+                with Image.open(path) as im:
+                    size = im.size
+            except Exception:
+                continue
+            mode = "RGBA"
+            round_mask = False
+            if "AppIcon.appiconset" in rel:
+                mode = "RGB"
+            elif path.name.lower() == "ic_stat_logo.png":
+                mode = "LA"
+            elif path.name.lower() == "ic_launcher_round.png":
+                round_mask = True
+            out.append({"path": rel, "size": size, "mode": mode, "round_mask": round_mask, "discovered": True})
+    return out
+
+
+def _svg_existing_geometry(path: Path) -> tuple[int, int, str] | None:
+    if not path.is_file():
+        return None
+    import re
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    m_vb = re.search(r'viewBox\s*=\s*["\']([^"\']+)["\']', text, flags=re.I)
+    m_w = re.search(r'\bwidth\s*=\s*["\']([0-9.]+)', text, flags=re.I)
+    m_h = re.search(r'\bheight\s*=\s*["\']([0-9.]+)', text, flags=re.I)
+    if not (m_vb and m_w and m_h):
+        return None
+    try:
+        return max(1, round(float(m_w.group(1)))), max(1, round(float(m_h.group(1)))), m_vb.group(1)
+    except Exception:
+        return None
+
+
+def svg_bytes_preserving_existing(root: Path, rel: str, src: Image.Image, width: int, height: int, viewbox: str) -> bytes:
+    geometry = _svg_existing_geometry(root / rel)
+    if geometry:
+        width, height, viewbox = geometry
+    return svg_bytes(src, width, height, viewbox)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate all system logo assets from res/icon.png")
     parser.add_argument("--target", default=".", help="Project root. Default: current directory")
     parser.add_argument("--source", default="res/icon.png", help="Source image relative to target. Default: res/icon.png")
     parser.add_argument("--ios-background", default="#FFFFFF", help="Background used when flattening iOS/RGB icons. Default: #FFFFFF")
     parser.add_argument("--update-ios-contents", action="store_true", help="Also normalize iOS AppIcon Contents.json")
+    parser.add_argument("--discover-by-name", action="store_true", help="Discover additional existing app-icon assets by known names inside safe platform roots")
+    parser.add_argument("--create-brand-owned-assets", action="store_true", help="Allow creation of FoxxDesk-owned logo/banner assets when absent")
+    parser.add_argument("--quality-profile", choices=["best", "balanced", "fast"], default="best")
+    parser.add_argument("--padding-ratio", type=float, default=0.0, help="Transparent safe padding around the source, 0.0-0.44")
+    parser.add_argument("--png-compress-level", type=int, default=9, choices=range(0,10), metavar="0-9")
+    parser.add_argument("--min-source-size", type=int, default=512)
+    parser.add_argument("--recommended-source-size", type=int, default=1024)
+    parser.add_argument("--no-png-optimize", action="store_true")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="Show what would be generated")
     mode.add_argument("--apply", action="store_true", help="Generate/update files")
@@ -178,7 +263,7 @@ def square_canvas(src: Image.Image, padding_ratio: float = 0.0) -> Image.Image:
 
 
 def resize_image(src: Image.Image, size: tuple[int, int]) -> Image.Image:
-    return square_canvas(src).resize(size, LANCZOS)
+    return square_canvas(src, CURRENT_PADDING_RATIO).resize(size, RESAMPLE_FILTER)
 
 
 def flatten_to_rgb(im: Image.Image, background: tuple[int, int, int]) -> Image.Image:
@@ -225,7 +310,7 @@ def png_bytes(src: Image.Image, size: tuple[int, int], mode: str, background: tu
         else:
             out_img = out_img.convert(mode)
     out = io.BytesIO()
-    out_img.save(out, format="PNG", optimize=True)
+    out_img.save(out, format="PNG", optimize=PNG_OPTIMIZE, compress_level=PNG_COMPRESS_LEVEL)
     return out.getvalue()
 
 
@@ -350,7 +435,7 @@ def write_if_changed(root: Path, rel: str, data: bytes, dry_run: bool, backup_ro
     return "written"
 
 
-def generate(root: Path, source_rel: str, dry_run: bool, ios_bg: tuple[int, int, int], update_ios_contents: bool) -> tuple[list[str], dict[str, int], Path]:
+def generate(root: Path, source_rel: str, dry_run: bool, ios_bg: tuple[int, int, int], update_ios_contents: bool, discover_by_name: bool = False, create_brand_owned_assets: bool = False) -> tuple[list[str], dict[str, int], Path]:
     src_path = root / source_rel
     if not src_path.exists():
         raise FileNotFoundError(f"Arquivo fonte nao encontrado: {src_path}")
@@ -363,8 +448,16 @@ def generate(root: Path, source_rel: str, dry_run: bool, ios_bg: tuple[int, int,
     with Image.open(src_path) as im:
         src = ensure_rgba(im)
 
-        for item in ALL_IMAGE_ASSETS:
+        image_assets = list(ALL_IMAGE_ASSETS)
+        if discover_by_name:
+            image_assets.extend(discover_png_assets(root, {x["path"] for x in image_assets}))
+        brand_owned = {"res/FoxxDesk.png"}
+        for item in image_assets:
             try:
+                if item["path"] in brand_owned and not (root / item["path"]).exists() and not create_brand_owned_assets:
+                    report.append(f"- pulado brand-owned ausente: `{item['path']}`")
+                    stats["skipped"] += 1
+                    continue
                 data = png_bytes(src, item["size"], item.get("mode", "RGBA"), ios_bg, bool(item.get("round_mask")))
                 status = write_if_changed(root, item["path"], data, dry_run, backup_root, report)
                 stats[status] += 1
@@ -372,9 +465,14 @@ def generate(root: Path, source_rel: str, dry_run: bool, ios_bg: tuple[int, int,
                 report.append(f"- ERRO PNG `{item['path']}`: {exc}")
                 stats["errors"] += 1
 
+        brand_owned_svg = {"res/FoxxDesk.svg", "res/foxxdesk-banner.svg"}
         for item in SVG_ASSETS:
             try:
-                data = svg_bytes(src, item["width"], item["height"], item["viewBox"])
+                if item["path"] in brand_owned_svg and not (root / item["path"]).exists() and not create_brand_owned_assets:
+                    report.append(f"- pulado brand-owned ausente: `{item['path']}`")
+                    stats["skipped"] += 1
+                    continue
+                data = svg_bytes_preserving_existing(root, item["path"], src, item["width"], item["height"], item["viewBox"])
                 status = write_if_changed(root, item["path"], data, dry_run, backup_root, report)
                 stats[status] += 1
             except Exception as exc:
@@ -420,8 +518,37 @@ def main() -> None:
     if args.apply and not args.yes:
         confirm()
 
+    global CURRENT_PADDING_RATIO, PNG_OPTIMIZE, PNG_COMPRESS_LEVEL, RESAMPLE_FILTER
+    if not 0.0 <= args.padding_ratio < 0.45:
+        raise SystemExit("--padding-ratio deve ficar entre 0 e 0.44")
+    CURRENT_PADDING_RATIO = args.padding_ratio
+    PNG_OPTIMIZE = not args.no_png_optimize
+    PNG_COMPRESS_LEVEL = args.png_compress_level
+    if args.quality_profile == "best":
+        RESAMPLE_FILTER = LANCZOS
+    elif args.quality_profile == "balanced":
+        RESAMPLE_FILTER = getattr(Image.Resampling, "BICUBIC", Image.BICUBIC) if hasattr(Image, "Resampling") else Image.BICUBIC
+    else:
+        RESAMPLE_FILTER = getattr(Image.Resampling, "BILINEAR", Image.BILINEAR) if hasattr(Image, "Resampling") else Image.BILINEAR
+        PNG_OPTIMIZE = False
+    source_path = root / args.source
+    if not source_path.is_file():
+        raise SystemExit(f"Arquivo fonte nao encontrado: {source_path}")
+    with Image.open(source_path) as source_probe:
+        sw, sh = source_probe.size
+    if min(sw, sh) < args.min_source_size:
+        raise SystemExit(
+            f"Fonte {sw}x{sh} abaixo do minimo {args.min_source_size}px; use uma imagem maior para evitar perda de qualidade."
+        )
+    if min(sw, sh) < args.recommended_source_size:
+        print(f"AVISO: fonte {sw}x{sh}; recomendado >= {args.recommended_source_size}px")
+
     ios_bg = hex_to_rgb(args.ios_background)
-    report, stats, backup_root = generate(root, args.source, args.dry_run, ios_bg, args.update_ios_contents)
+    report, stats, backup_root = generate(
+        root, args.source, args.dry_run, ios_bg, args.update_ios_contents,
+        discover_by_name=args.discover_by_name,
+        create_brand_owned_assets=args.create_brand_owned_assets,
+    )
     mode = "dry-run" if args.dry_run else "apply"
     changed = stats["planned"] if args.dry_run else stats["written"]
     report_path = root / "icon_assets_report.md"
@@ -439,7 +566,7 @@ def main() -> None:
         "",
         "## Regras",
         "",
-        "- Fonte unica: `res/icon.png`.",
+        f"- Fonte unica configurada: `{args.source}`.",
         "- Nunca altera `res/logo-header.svg`.",
         "- Nunca altera `res/design.svg`.",
         "- Nunca altera `res/icon.png` porque ele e a fonte.",

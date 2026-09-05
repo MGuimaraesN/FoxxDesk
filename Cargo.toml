@@ -1,11 +1,11 @@
 [package]
-name = "foxxdesk"
+name = "rustdesk"
 version = "1.4.9"
-authors = ["FoxxDesk / MGN"]
+authors = ["rustdesk <info@rustdesk.com>"]
 edition = "2021"
 build= "build.rs"
-description = "FoxxDesk Remote Desktop"
-default-run = "foxxdesk"
+description = "RustDesk Remote Desktop"
+default-run = "rustdesk"
 rust-version = "1.75"
 
 [lib]
@@ -210,10 +210,10 @@ exclude = ["vdi/host", "examples/custom_plugin"]
 libxdo-sys = { path = "libs/libxdo-sys-stub" }
 
 [package.metadata.winres]
-LegalCopyright = "Copyright © 2026 MGN Systems. All rights reserved."
-ProductName = "FoxxDesk"
-FileDescription = "FoxxDesk Remote Desktop"
-OriginalFilename = "foxxdesk.exe"
+LegalCopyright = "Copyright © 2026 Purslane Tech Pte. Ltd. All rights reserved."
+ProductName = "RustDesk"
+FileDescription = "RustDesk Remote Desktop"
+OriginalFilename = "rustdesk.exe"
 
 [target.'cfg(target_os="windows")'.build-dependencies]
 winres = "0.1"
@@ -229,8 +229,8 @@ hound = "3.5"
 docopt = "1.1"
 
 [package.metadata.bundle]
-name = "FoxxDesk"
-identifier = "com.carriez.foxxdesk"
+name = "RustDesk"
+identifier = "com.carriez.rustdesk"
 icon = ["res/32x32.png", "res/128x128.png", "res/128x128@2x.png"]
 osx_minimum_system_version = "10.14"
 
