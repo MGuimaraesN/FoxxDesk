@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "files": [
     "fastlane/metadata/android/en-US/images/icon.png",
     "flutter/android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
@@ -23,6 +23,7 @@
     "flutter/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png",
     "flutter/android/app/src/main/res/mipmap-xxxhdpi/ic_stat_logo.png",
     "flutter/assets/icon.svg",
+    "flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json",
     "flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
     "flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@1x.png",
     "flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@2x.png",
@@ -44,6 +45,9 @@
     "res/128x128@2x.png",
     "res/32x32.png",
     "res/64x64.png",
+    "res/FoxxDesk.png",
+    "res/FoxxDesk.svg",
+    "res/foxxdesk-banner.svg",
     "res/icon.ico",
     "res/icon.png",
     "res/logo.svg",
