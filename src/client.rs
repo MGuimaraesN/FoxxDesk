@@ -296,11 +296,8 @@ impl Client {
         } else {
             if other_server == PUBLIC_SERVER {
                 (
-                    check_port(RENDEZVOUS_SERVERS[0], RENDEZVOUS_PORT),
-                    RENDEZVOUS_SERVERS[1..]
-                        .iter()
-                        .map(|x| x.to_string())
-                        .collect(),
+                    check_port(crate::foxxdesk_defaults::RENDEZVOUS_SERVER, RENDEZVOUS_PORT), // FOXXDESK_RUNTIME_DEFAULTS_V1
+                    Vec::new(),
                     true,
                 )
             } else {
@@ -764,7 +761,7 @@ impl Client {
         conn: &mut Stream,
     ) -> ResultType<Option<Vec<u8>>> {
         let rs_pk = get_rs_pk(if key.is_empty() {
-            config::RS_PUB_KEY
+            crate::foxxdesk_defaults::PUBLIC_KEY // FOXXDESK_RUNTIME_DEFAULTS_V1
         } else {
             key
         });
@@ -1803,7 +1800,7 @@ impl LoginConfigHandler {
             let server = server_key.next().unwrap_or_default();
             let args = server_key.next().unwrap_or_default();
             let key = if server == PUBLIC_SERVER {
-                config::RS_PUB_KEY.to_owned()
+                crate::foxxdesk_defaults::PUBLIC_KEY.to_owned() // FOXXDESK_RUNTIME_DEFAULTS_V1
             } else {
                 let mut args_map: HashMap<String, &str> = HashMap::new();
                 for arg in args.split('&') {

@@ -36,6 +36,7 @@ pub mod flutter;
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 pub mod flutter_ffi;
 use common::*;
+mod foxxdesk_defaults; // FOXXDESK_RUNTIME_DEFAULTS_V1
 mod auth_2fa;
 #[cfg(not(target_os = "ios"))]
 mod clipboard;
