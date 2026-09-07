@@ -31,6 +31,22 @@ UPSTREAM_SLUG = "foxxdesk"
 skip_cargo = False
 
 
+
+def resolve_flutter_macos_app_bundle() -> Path:
+    """Return the actual Flutter .app bundle without assuming the upstream name."""
+    release_dir = Path("build/macos/Build/Products/Release")
+    preferred = release_dir / f"{APP_DISPLAY_NAME}.app"
+    if preferred.is_dir():
+        return preferred
+    apps = sorted(p for p in release_dir.glob("*.app") if p.is_dir())
+    if len(apps) == 1:
+        return apps[0]
+    names = ", ".join(p.name for p in apps) if apps else "nenhum"
+    raise RuntimeError(
+        f"Não foi possível identificar o bundle macOS em {release_dir}: {names}. "
+        "O Flutter deve gerar exatamente um .app ou APP_DISPLAY_NAME deve corresponder ao produto."
+    )
+
 def get_deb_arch() -> str:
     custom_arch = os.environ.get("DEB_ARCH")
     if custom_arch is None:
@@ -425,7 +441,11 @@ def build_flutter_dmg(version, features):
     mac_arch = 'arm64' if platform.machine().lower() in ('arm64', 'aarch64') else 'x86_64'
     system2(
         f'FLUTTER_XCODE_ARCHS={mac_arch} FLUTTER_XCODE_ONLY_ACTIVE_ARCH=YES flutter build macos --release')
-    system2('cp -rf ../target/release/service ./build/macos/Build/Products/Release/RustDesk.app/Contents/MacOS/')
+    mac_app = resolve_flutter_macos_app_bundle()
+    service_src = Path('../target/release/service')
+    service_dst = mac_app / 'Contents' / 'MacOS' / 'service'
+    service_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(service_src, service_dst)
     '''
     system2(
         "create-dmg --volname \"RustDesk Installer\" --window-pos 200 120 --window-size 800 400 --icon-size 100 --app-drop-link 600 185 --icon RustDesk.app 200 190 --hide-extension RustDesk.app rustdesk.dmg ./build/macos/Build/Products/Release/RustDesk.app")

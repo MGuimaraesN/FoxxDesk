@@ -24,7 +24,7 @@ The best open-source remote desktop client software, written in Rust.
 
 %install
 
-mkdir -p "%{buildroot}/usr/share/rustdesk" && cp -r ${HBB}/flutter/build/linux/x64/release/bundle/* -t "%{buildroot}/usr/share/rustdesk"
+mkdir -p "%{buildroot}/usr/share/foxxdesk" && cp -r ${HBB}/flutter/build/linux/x64/release/bundle/* -t "%{buildroot}/usr/share/foxxdesk"
 mkdir -p "%{buildroot}/usr/bin"
 install -Dm 644 $HBB/res/foxxdesk.service -t "%{buildroot}/usr/share/foxxdesk/files"
 install -Dm 644 $HBB/res/foxxdesk.desktop -t "%{buildroot}/usr/share/foxxdesk/files"
@@ -33,12 +33,9 @@ install -Dm 644 $HBB/res/128x128@2x.png "%{buildroot}/usr/share/icons/hicolor/25
 install -Dm 644 $HBB/res/scalable.svg "%{buildroot}/usr/share/icons/hicolor/scalable/apps/rustdesk.svg"
 
 %files
-/usr/share/foxxdesk/*
-/usr/share/foxxdesk/files/foxxdesk.service
+/usr/share/foxxdesk
 /usr/share/icons/hicolor/256x256/apps/rustdesk.png
 /usr/share/icons/hicolor/scalable/apps/rustdesk.svg
-/usr/share/foxxdesk/files/foxxdesk.desktop
-/usr/share/foxxdesk/files/foxxdesk-link.desktop
 
 %changelog
 # let's skip this for now
