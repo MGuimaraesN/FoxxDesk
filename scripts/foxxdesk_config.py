@@ -23,7 +23,7 @@ LEGACY_REL = Path('.foxxdesk/brand.json')
 SCHEMA_REL = Path('.foxxdesk/foxxdesk.config.schema.json')
 
 DEFAULTS: dict[str, Any] = {
-    'version': 8,
+    'version': 9,
     'brand': {
         'display_name': 'FoxxDesk',
         'slug': 'foxxdesk',
@@ -91,6 +91,8 @@ DEFAULTS: dict[str, Any] = {
         'manual_build_only': True,
         'ci_mutates_source': False,
         'require_prepared_commit': True,
+        'publish_release_default': False,
+        'disable_upstream_nightly_schedule': True,
     },
     'safety': {
         'fail_on_missing_required_files': True,
@@ -215,7 +217,7 @@ def load_config(root: Path, *, migrate_legacy: bool = True, write_migration: boo
     if migrate_legacy:
         cfg, migrated = _migrate_legacy(root, cfg)
     cfg['$schema'] = './foxxdesk.config.schema.json'
-    cfg['version'] = 6
+    cfg['version'] = 9
     if not cfg['network'].get('relay'):
         cfg['network']['relay'] = cfg['network'].get('server', '')
     if not cfg['brand'].get('homepage') and cfg['network'].get('server'):

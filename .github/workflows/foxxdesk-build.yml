@@ -14,6 +14,11 @@ on:
         required: true
         type: string
         default: "foxxdesk-nightly"
+      publish_release:
+        description: "Create/update a GitHub prerelease (requires contents: write)"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -43,3 +48,4 @@ jobs:
     with:
       upload-artifact: ${{ inputs.upload_artifact }}
       upload-tag: ${{ inputs.upload_tag }}
+      publish-release: ${{ inputs.publish_release }}

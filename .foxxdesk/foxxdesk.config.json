@@ -63,7 +63,9 @@
     "deterministic_icon_cache_in_ci": true,
     "ci_mutates_source": false,
     "require_prepared_commit": true,
-    "inject_prepare_hooks_into_upstream_workflows": false
+    "inject_prepare_hooks_into_upstream_workflows": false,
+    "publish_release_default": false,
+    "disable_upstream_nightly_schedule": true
   },
   "safety": {
     "fail_on_missing_required_files": true,
@@ -73,7 +75,7 @@
     "require_nonempty_key": true,
     "allow_unverified_icon_fallback": false
   },
-  "version": 8,
+  "version": 9,
   "upstream": {
     "rustdesk_ref": "auto",
     "sync_hbb_common": true,

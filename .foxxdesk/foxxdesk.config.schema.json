@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "FoxxDesk configuration v8 — optional brand assets, submodule-safe CI",
+  "title": "FoxxDesk configuration v9 — build-safe packaging, opt-in releases, submodule-safe CI",
   "type": "object",
   "required": [
     "brand",
@@ -15,8 +15,8 @@
   "properties": {
     "version": {
       "type": "integer",
-      "minimum": 8,
-      "description": "Versão do formato FoxxDesk. V8 separa assets obrigatórios de build de assets opcionais de marca e mantém hbb_common upstream/limpo."
+      "minimum": 9,
+      "description": "Versão do formato FoxxDesk. V9 adiciona compatibilidade cirúrgica de build/packaging, releases opt-in e desativa o nightly automático sem alterar .gitignore."
     },
     "brand": {
       "type": "object",
@@ -242,6 +242,14 @@
           "type": "boolean",
           "const": false,
           "description": "V6 não injeta hooks em workflows upstream; o source deve ser preparado e commitado antes do build."
+        },
+        "publish_release_default": {
+          "type": "boolean",
+          "description": "Padrão do workflow manual para criar GitHub Release/prerelease. false mantém apenas artifacts e evita falha 403 quando o token não pode publicar releases."
+        },
+        "disable_upstream_nightly_schedule": {
+          "type": "boolean",
+          "description": "Quando true, o prepare remove apenas o bloco schedule do flutter-nightly.yml e preserva workflow_dispatch manual."
         }
       }
     },

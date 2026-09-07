@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Apply/check FoxxDesk public platform branding with narrow semantic patches.
 
-This module owns the same four public-brand invariants that the validator checks:
+This module owns the public-brand invariants that the validator checks:
 - Android string app_name
 - Android <application android:label>
 - macOS PRODUCT_NAME
 - Windows ProductName (+ matching executable metadata when those fields exist)
+- Linux desktop/link Name and systemd Description
 
 It intentionally does not scan the repository or replace generic RustDesk strings.
 """
@@ -21,7 +22,7 @@ from xml.sax.saxutils import escape as xml_escape
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from foxxdesk_config import load_config  # noqa: E402
 
-SCRIPT_VERSION = 'foxxdesk-public-brand-v1-semantic-2026-09-05'
+SCRIPT_VERSION = 'foxxdesk-public-brand-v2-linux-semantic-2026-09-06'
 
 
 class BrandPatchError(RuntimeError):
@@ -126,6 +127,18 @@ def patch_rc_value(text: str, key: str, value: str, *, required: bool) -> str:
     return pat.sub(lambda m: m.group(1) + escaped + m.group(3), text, count=1)
 
 
+def patch_ini_key(text: str, key: str, value: str, label: str) -> str:
+    pat = re.compile(rf'(?m)^(\s*{re.escape(key)}\s*=).*$')
+    if not pat.search(text):
+        raise BrandPatchError(f'{label}: chave {key} não encontrada')
+    return pat.sub(lambda m: m.group(1) + value, text, count=1)
+
+
+def ini_value(text: str, key: str) -> Optional[str]:
+    m = re.search(rf'(?m)^\s*{re.escape(key)}\s*=\s*(.*?)\s*$', text)
+    return m.group(1).strip() if m else None
+
+
 def desired_errors(root: Path, display: str) -> list[str]:
     errors: list[str] = []
 
@@ -165,6 +178,20 @@ def desired_errors(root: Path, display: str) -> list[str]:
         if value != display:
             errors.append(f'Windows ProductName = {value!r}, esperado {display!r}')
 
+    linux_public = [
+        ('res/foxxdesk.desktop', 'Name', display),
+        ('res/foxxdesk-link.desktop', 'Name', display),
+        ('res/foxxdesk.service', 'Description', display),
+    ]
+    for rel, key, expected in linux_public:
+        path = root / rel
+        if not path.is_file():
+            errors.append(f'arquivo obrigatório ausente: {rel}')
+            continue
+        value = ini_value(read(path), key)
+        if value != expected:
+            errors.append(f'{rel}: {key} = {value!r}, esperado {expected!r}')
+
     return errors
 
 
@@ -181,6 +208,9 @@ def apply_or_check(root: Path, *, apply: bool) -> int:
         (root / 'flutter/android/app/src/main/AndroidManifest.xml', 'android manifest'),
         (root / 'flutter/macos/Runner/Configs/AppInfo.xcconfig', 'macOS xcconfig'),
         (root / 'flutter/windows/runner/Runner.rc', 'Windows resource'),
+        (root / 'res/foxxdesk.desktop', 'Linux desktop'),
+        (root / 'res/foxxdesk-link.desktop', 'Linux URL desktop'),
+        (root / 'res/foxxdesk.service', 'Linux service'),
     ]
     for path, label in files:
         if not path.is_file():
@@ -211,6 +241,15 @@ def apply_or_check(root: Path, *, apply: bool) -> int:
     after = patch_rc_value(after, 'OriginalFilename', f'{slug}.exe', required=False)
     changed += int(write_if_changed(path, before, after, apply=apply))
 
+    for path, key, label in [
+        (root / 'res/foxxdesk.desktop', 'Name', 'foxxdesk.desktop'),
+        (root / 'res/foxxdesk-link.desktop', 'Name', 'foxxdesk-link.desktop'),
+        (root / 'res/foxxdesk.service', 'Description', 'foxxdesk.service'),
+    ]:
+        before = read(path)
+        after = patch_ini_key(before, key, display, label)
+        changed += int(write_if_changed(path, before, after, apply=apply))
+
     if apply:
         errors = desired_errors(root, display)
         if errors:
@@ -226,7 +265,7 @@ def apply_or_check(root: Path, *, apply: bool) -> int:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description='Aplica/valida nome público FoxxDesk em Android, macOS e Windows')
+    p = argparse.ArgumentParser(description='Aplica/valida nome público FoxxDesk em Android, macOS, Windows e Linux')
     p.add_argument('--target', default='.')
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument('--apply', action='store_true')

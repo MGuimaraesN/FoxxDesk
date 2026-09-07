@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-SCRIPT_VERSION = "foxxdesk-prepare-v8-optional-brand-assets-2026-09-05"
+SCRIPT_VERSION = "foxxdesk-prepare-v9-build-safe-2026-09-06"
 STATE_REL = Path('.foxxdesk/icon-state.json')
 OVERLAY_MANIFEST_REL = Path('.foxxdesk/icon-overlay-manifest.json')
 
@@ -313,6 +313,13 @@ def apply_public_brand(root: Path) -> None:
     )
 
 
+def apply_build_compat(root: Path) -> None:
+    subprocess.run(
+        [sys.executable, str(root / 'scripts/foxxdesk_build_compat.py'), '--target', str(root), '--apply'],
+        cwd=str(root), check=True,
+    )
+
+
 def validate(root: Path) -> None:
     subprocess.run(
         [sys.executable, str(root / 'scripts/foxxdesk_validate.py'), '--target', str(root)],
@@ -389,6 +396,7 @@ def main() -> int:
             # be left as RustDesk while the validator expects the configured name.
             apply_public_brand(root)
             apply_runtime_defaults(root)
+            apply_build_compat(root)
             ensure_ci_hooks(root)
             if not args.skip_icons:
                 apply_icons(

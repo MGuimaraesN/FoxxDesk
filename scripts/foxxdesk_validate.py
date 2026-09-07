@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-SCRIPT_VERSION = 'foxxdesk-validate-v8-optional-brand-assets-2026-09-05'
+SCRIPT_VERSION = 'foxxdesk-validate-v9-build-safe-2026-09-06'
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from foxxdesk_config import CONFIG_REL, OPTIONAL_BRAND_ASSETS, load_config  # noqa: E402
 from foxxdesk_public_brand import desired_errors as public_brand_errors  # noqa: E402
@@ -243,6 +243,13 @@ def main() -> int:
     errors.extend(brand_errors)
     warnings.extend(brand_warnings)
 
+    build_compat = subprocess.run(
+        [sys.executable, str(root / 'scripts/foxxdesk_build_compat.py'), '--target', str(root), '--check'],
+        cwd=str(root), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    if build_compat.returncode != 0:
+        errors.append('compatibilidade de build/packaging desatualizada: ' + (build_compat.stderr.strip() or build_compat.stdout.strip()))
+
     if icons.get('enabled', True):
         source = root / str(icons.get('source', '.foxxdesk/assets/icon.png'))
         if not source.is_file():
@@ -279,6 +286,8 @@ def main() -> int:
         'scripts/foxxdesk_prepare.py',
         'scripts/foxxdesk_validate.py',
         'scripts/foxxdesk_runtime_defaults.py',
+        'scripts/foxxdesk_public_brand.py',
+        'scripts/foxxdesk_build_compat.py',
     ]
     for rel in helpers:
         path = root / rel

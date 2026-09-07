@@ -1428,7 +1428,7 @@ def ensure_v25_generated_files(target: Path, args: argparse.Namespace, report: D
         report,
         backup_root,
         "garantir workflow FoxxDesk manual-only",
-        create_only=False,
+        create_only=True,
     )
     _record_generated_text_file(
         target,

@@ -53,9 +53,5 @@
     "res/scalable.svg",
     "res/tray-icon.ico"
   ],
-  "optional_files": [
-    "res/FoxxDesk.png",
-    "res/FoxxDesk.svg",
-    "res/foxxdesk-banner.svg"
-  ]
+  "optional_files": []
 }
