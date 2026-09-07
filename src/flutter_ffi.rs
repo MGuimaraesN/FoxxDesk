@@ -2814,7 +2814,7 @@ pub fn main_get_common(key: String) -> String {
     if key == "is-printer-installed" {
         #[cfg(target_os = "windows")]
         {
-            return match remote_printer::is_rd_printer_installed("foxxdesk") {
+            return match remote_printer::is_rd_printer_installed(&get_app_name()) {
                 Ok(r) => r.to_string(),
                 Err(e) => e.to_string(),
             };
@@ -2903,7 +2903,7 @@ pub fn main_set_common(_key: String, _value: String) {
     #[cfg(target_os = "windows")]
     if _key == "install-printer" && crate::platform::is_win_10_or_greater() {
         std::thread::spawn(move || {
-            let (success, msg) = match remote_printer::install_update_printer("foxxdesk") {
+            let (success, msg) = match remote_printer::install_update_printer(&get_app_name()) {
                 Ok(_) => (true, "".to_owned()),
                 Err(e) => {
                     let err = e.to_string();

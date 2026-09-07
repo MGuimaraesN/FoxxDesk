@@ -122,7 +122,6 @@ impl Drop for SimpleCallOnReturn {
 }
 
 pub fn global_init() -> bool {
-    crate::foxxdesk_defaults::apply(); // FOXXDESK_RUNTIME_DEFAULTS_V1
     #[cfg(target_os = "linux")]
     {
         if !crate::platform::linux::is_x11() {
@@ -1819,9 +1818,6 @@ pub async fn get_key(sync: bool) -> String {
         options.remove("key").unwrap_or_default()
     };
     if key.is_empty() {
-        key = crate::foxxdesk_defaults::PUBLIC_KEY.to_owned(); // FOXXDESK_RUNTIME_DEFAULTS_V1
-    }
-    if key.is_empty() {
         key = config::RS_PUB_KEY.to_owned();
     }
     key
@@ -2085,7 +2081,6 @@ pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
 }
 
 pub fn load_custom_client() {
-    crate::foxxdesk_defaults::apply(); // FOXXDESK_RUNTIME_DEFAULTS_V1
     #[cfg(debug_assertions)]
     if let Ok(data) = std::fs::read_to_string("./custom.txt") {
         read_custom_client(data.trim());
@@ -2206,11 +2201,6 @@ pub fn read_custom_client(config: &str) {
 
     if let Some(app_name) = data.remove("app-name") {
         if let Some(app_name) = app_name.as_str() {
-            let app_name = if app_name.eq_ignore_ascii_case("foxxdesk") {
-                "FoxxDesk"
-            } else {
-                app_name
-            };
             *config::APP_NAME.write().unwrap() = app_name.to_owned();
         }
     }
