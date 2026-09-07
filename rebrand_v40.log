@@ -11,3 +11,16 @@
 2026-09-06 22:18:45,316 [INFO] Icon assets: gerenciados externamente por foxxdesk_prepare.py
 2026-09-06 22:18:45,316 [INFO] Etapa: validação final de segurança/build
 2026-09-06 22:18:45,628 [INFO] Resumo final: alterados=117 pendencias=0 nao_encontrados=0 relatorio=/home/mateus/_Projects/FoxxDesk/rebrand_report.md
+2026-09-06 22:22:12,596 [INFO] FoxxDesk rebrand v40-public-text-brand-workflow-safe-2026-09-06 iniciado
+2026-09-06 22:22:12,597 [INFO] Target: /home/mateus/_Projects/FoxxDesk
+2026-09-06 22:22:12,597 [INFO] Modo: apply | profile=runtime | scan_all=False
+2026-09-06 22:22:12,597 [INFO] Icon assets: pipeline externo foxxdesk_prepare.py
+2026-09-06 22:22:12,598 [INFO] Etapa: hbb_common pulado por --skip-hbb-common-download
+2026-09-06 22:22:12,598 [INFO] Etapa: criar/atualizar helpers e workflow FoxxDesk
+2026-09-06 22:22:12,599 [INFO] Etapa: aplicar renomeações seguras e remover obsoletos
+2026-09-06 22:22:12,604 [INFO] Etapa: processar 208 arquivo(s) candidato(s)
+2026-09-06 22:22:13,357 [INFO] Etapa: reforçar helper bridge e permissões executáveis
+2026-09-06 22:22:13,359 [INFO] Etapa: icon assets V34
+2026-09-06 22:22:13,359 [INFO] Icon assets: gerenciados externamente por foxxdesk_prepare.py
+2026-09-06 22:22:13,359 [INFO] Etapa: validação final de segurança/build
+2026-09-06 22:22:13,738 [INFO] Resumo final: alterados=0 pendencias=0 nao_encontrados=0 relatorio=/home/mateus/_Projects/FoxxDesk/rebrand_report.md
